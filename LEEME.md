@@ -6,6 +6,13 @@ notas que aparecen en una hoja en blanco justo después de cada página.
 ## Uso
 
 - **Añadir PDF**: botón «Añadir PDF» o arrastra los archivos a la ventana.
+- **Carpetas**: «Nueva carpeta» crea una carpeta dentro de la que estás viendo (se pueden
+  anidar). Pulsa una carpeta para entrar; la ruta de arriba («Biblioteca › Física › Tema 1»)
+  sirve para volver. Los PDF que añades se guardan en la carpeta abierta.
+  - Mover: menú «⋯» del documento o carpeta → «Mover a…», o arrastra la tarjeta encima de
+    una carpeta o de un nombre de la ruta (en el ordenador).
+  - «⋯» → «Cambiar nombre» / «Eliminar». Al eliminar una carpeta su contenido no se borra:
+    pasa a la carpeta de arriba.
 - **Marcar como leída**: botón bajo cada página (o tecla `L`). El % se calcula según la
   cantidad de texto de cada página (en PDF escaneados, por nº de páginas).
 - **Marcar un fragmento**
@@ -39,16 +46,11 @@ Los datos se guardan en el navegador de cada dispositivo (no se suben a ningún 
 
 ## Abrirla en el Mac
 
-Doble clic en el icono **Study App** del Escritorio. Se abre en una ventana propia
-(con Chrome, Edge o Brave instalados; si no, en Safari). Puedes arrastrar el icono
-al Dock o a la carpeta Aplicaciones.
+Doble clic en el icono **Study App** del Escritorio: abre la versión publicada
+(https://danielcb0104-png.github.io/study-app/) en una ventana propia (con Chrome,
+Edge o Brave; si no, en Safari). Se actualiza sola cada vez que se publica una versión.
 
-- Si la primera vez macOS dice que no puede abrirla: clic derecho sobre el icono → Abrir
-  → Abrir (o Ajustes del Sistema → Privacidad y seguridad → «Abrir igualmente»).
-- La app lleva dentro su propio mini‑servidor (no necesita Python). Funciona en
-  `http://localhost:8765` y se apaga sola tras 6 h sin uso.
-- `Abrir Study App.command` (esta carpeta) es una alternativa que usa la misma
-  dirección y, por tanto, los mismos datos.
+- Si macOS dice que no puede abrirla: clic derecho sobre el icono → Abrir → Abrir.
 
 ## Usarla en el móvil (y compartirla)
 

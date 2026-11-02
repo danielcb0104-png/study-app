@@ -25,13 +25,13 @@ let dbp = null;
 function openDB() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
-      db.createObjectStore('docs', { keyPath: 'id' });
-      db.createObjectStore('files', { keyPath: 'id' });
-      const marks = db.createObjectStore('marks', { keyPath: 'id' });
-      marks.createIndex('docId', 'docId');
+      if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('marks')) db.createObjectStore('marks', { keyPath: 'id' }).createIndex('docId', 'docId');
+      if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -79,6 +79,11 @@ const ICON = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/>',
+  folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>',
+  folderPlus: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M12 10.5v5M9.5 13h5"/>',
+  move: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M9 13h6M13 10.5l2.5 2.5-2.5 2.5"/>',
+  more: '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
 };
 
 /* =========================================================
@@ -118,33 +123,291 @@ function progressOf(doc) {
 /* =========================================================
    BIBLIOTECA
    ========================================================= */
+/* ---------- Carpetas ----------
+   Cada documento tiene folderId (null = raíz de la biblioteca). Las carpetas se
+   pueden anidar: {id, name, parentId, createdAt}. */
+const LIB = { folderId: null };
+try { LIB.folderId = localStorage.getItem('study-folder') || null; } catch {}
+function setFolder(id) {
+  LIB.folderId = id || null;
+  try { if (LIB.folderId) localStorage.setItem('study-folder', LIB.folderId); else localStorage.removeItem('study-folder'); } catch {}
+  renderLibrary();
+}
+const byName = (a, b) => a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' });
+function folderPath(folders, id) {
+  const map = new Map(folders.map((f) => [f.id, f]));
+  const path = [];
+  let f = map.get(id);
+  while (f && path.length < 50) { path.unshift(f); f = map.get(f.parentId); }
+  return path;
+}
+// ids de una carpeta y todas sus subcarpetas
+function descendants(folders, id) {
+  const out = new Set([id]);
+  let grew = true;
+  while (grew) { grew = false; for (const f of folders) if (out.has(f.parentId) && !out.has(f.id)) { out.add(f.id); grew = true; } }
+  return out;
+}
+
 async function renderLibrary() {
-  const docs = (await db.getAll('docs')).sort((a, b) => (b.openedAt || b.addedAt) - (a.openedAt || a.addedAt));
-  const allMarks = await db.getAll('marks');
+  const [docsAll, folders, allMarks] = await Promise.all([db.getAll('docs'), db.getAll('folders'), db.getAll('marks')]);
+  if (LIB.folderId && !folders.some((f) => f.id === LIB.folderId)) LIB.folderId = null;
+  const cur = LIB.folderId;
   const counts = {};
   for (const m of allMarks) counts[m.docId] = (counts[m.docId] || 0) + 1;
+  const subfolders = folders.filter((f) => (f.parentId || null) === cur).sort(byName);
+  const docs = docsAll.filter((d) => (d.folderId || null) === cur)
+    .sort((a, b) => (b.openedAt || b.addedAt) - (a.openedAt || a.addedAt));
+
+  // Ruta: Biblioteca › Física › Tema 1
+  const crumbs = $('#crumbs');
+  crumbs.replaceChildren();
+  const path = folderPath(folders, cur);
+  const addCrumb = (label, id, isLast) => {
+    const c = h(isLast ? 'span' : 'button', { class: `crumb${isLast ? ' current' : ''}`, type: isLast ? null : 'button' }, label);
+    if (!isLast) c.addEventListener('click', () => setFolder(id));
+    makeDropTarget(c, id);
+    crumbs.append(c);
+    if (!isLast) crumbs.append(svgIcon(ICON.chevron));
+  };
+  addCrumb('Biblioteca', null, path.length === 0);
+  path.forEach((f, i) => addCrumb(f.name, f.id, i === path.length - 1));
+  crumbs.hidden = folders.length === 0 && !cur;
+
   const grid = $('#docGrid');
   grid.replaceChildren();
-  $('#emptyState').hidden = docs.length > 0;
+  const empty = !docsAll.length && !folders.length;
+  $('#emptyState').hidden = !empty;
+  $('#folderEmpty').hidden = empty || subfolders.length + docs.length > 0;
+
+  for (const f of subfolders) {
+    const ids = descendants(folders, f.id);
+    const nDocs = docsAll.filter((d) => ids.has(d.folderId)).length;
+    const nSub = folders.filter((x) => x.parentId === f.id).length;
+    const more = h('button', { class: 'icon-btn small more', title: 'Opciones', 'aria-label': `Opciones de la carpeta ${f.name}` }, svgIcon(ICON.more));
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showMenu(more, [
+        { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameFolder(f) },
+        { label: 'Mover a…', icon: ICON.move, fn: () => moveItem({ type: 'folder', id: f.id }) },
+        { label: 'Eliminar carpeta', icon: ICON.trash, danger: true, fn: () => deleteFolder(f) },
+      ]);
+    });
+    const card = h('div', { class: 'card folder-card', title: f.name, draggable: 'true', tabindex: '0', role: 'button' },
+      h('div', { class: 'folder-icon' }, svgIcon(ICON.folder)),
+      h('div', { class: 'body' },
+        h('div', { class: 'name' }, f.name),
+        h('div', { class: 'meta' },
+          h('span', {}, [nDocs ? `${nDocs} documento${nDocs > 1 ? 's' : ''}` : 'Vacía', nSub ? `${nSub} carpeta${nSub > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')),
+          more)));
+    card.addEventListener('click', () => setFolder(f.id));
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter') setFolder(f.id); });
+    makeDraggable(card, { type: 'folder', id: f.id });
+    makeDropTarget(card, f.id);
+    grid.append(card);
+  }
+
   for (const d of docs) {
     const p = progressOf(d);
-    const card = h('div', { class: 'card', onclick: () => openDoc(d.id), title: d.name },
-      h('div', { class: 'thumb' }, d.thumb ? h('img', { src: d.thumb, alt: '' }) : null),
+    const more = h('button', { class: 'icon-btn small more', title: 'Opciones', 'aria-label': `Opciones de ${d.name}` }, svgIcon(ICON.more));
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showMenu(more, [
+        { label: 'Mover a carpeta…', icon: ICON.move, fn: () => moveItem({ type: 'doc', id: d.id }) },
+        { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameDoc(d) },
+        { label: 'Eliminar', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
+      ]);
+    });
+    const card = h('div', { class: 'card', onclick: () => openDoc(d.id), title: d.name, draggable: 'true' },
+      h('div', { class: 'thumb' }, d.thumb ? h('img', { src: d.thumb, alt: '', draggable: 'false' }) : null),
       h('div', { class: 'body' },
         h('div', { class: 'name' }, d.name),
         h('div', { class: 'bar' }, h('div', { style: { width: `${p * 100}%` } })),
         h('div', { class: 'meta' },
-          h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.`),
-          h('span', {}, counts[d.id] ? `${counts[d.id]} notas` : ''),
-          h('button', {
-            class: 'icon-btn small del', title: 'Eliminar', 'aria-label': 'Eliminar',
-            onclick: (e) => { e.stopPropagation(); deleteDoc(d); },
-          }, svgIcon(ICON.trash)),
-        ),
+          h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.${counts[d.id] ? ` · ${counts[d.id]} notas` : ''}`),
+          more),
       ),
     );
+    makeDraggable(card, { type: 'doc', id: d.id });
     grid.append(card);
   }
+}
+
+/* Arrastrar documentos y carpetas a otra carpeta (ordenador) */
+const DRAG_TYPE = 'application/x-study-item';
+let dragItem = null;
+function makeDraggable(el, item) {
+  el.addEventListener('dragstart', (e) => {
+    dragItem = item;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(item));
+    el.classList.add('dragging');
+  });
+  el.addEventListener('dragend', () => { dragItem = null; el.classList.remove('dragging'); document.querySelectorAll('.drop-over').forEach((x) => x.classList.remove('drop-over')); });
+}
+function makeDropTarget(el, folderId) {
+  const ok = (e) => dragItem && [...e.dataTransfer.types].includes(DRAG_TYPE) && !(dragItem.type === 'folder' && dragItem.id === folderId);
+  el.addEventListener('dragover', (e) => { if (!ok(e)) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; el.classList.add('drop-over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-over'));
+  el.addEventListener('drop', async (e) => {
+    if (!ok(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    el.classList.remove('drop-over');
+    const item = dragItem; dragItem = null;
+    await moveTo(item, folderId);
+  });
+}
+
+async function moveTo(item, folderId) {
+  folderId = folderId || null;
+  if (item.type === 'doc') {
+    const d = await db.get('docs', item.id);
+    if (!d || (d.folderId || null) === folderId) return;
+    d.folderId = folderId;
+    await db.put('docs', d);
+  } else {
+    const folders = await db.getAll('folders');
+    const f = folders.find((x) => x.id === item.id);
+    if (!f || (f.parentId || null) === folderId) return;
+    if (folderId && descendants(folders, f.id).has(folderId)) { toast('No se puede mover una carpeta dentro de sí misma'); return; }
+    f.parentId = folderId;
+    await db.put('folders', f);
+  }
+  const folders = await db.getAll('folders');
+  const dest = folderId ? folders.find((x) => x.id === folderId)?.name : 'Biblioteca';
+  toast(`Movido a «${dest}»`);
+  renderLibrary();
+}
+
+async function createFolder(parentId = LIB.folderId) {
+  const name = await askText({ title: 'Nueva carpeta', label: 'Nombre de la carpeta', value: '', ok: 'Crear' });
+  if (!name) return null;
+  const f = { id: uid(), name, parentId: parentId || null, createdAt: Date.now() };
+  await db.put('folders', f);
+  renderLibrary();
+  return f;
+}
+async function renameFolder(f) {
+  const name = await askText({ title: 'Cambiar nombre', label: 'Nombre de la carpeta', value: f.name, ok: 'Guardar' });
+  if (!name || name === f.name) return;
+  f.name = name; await db.put('folders', f); renderLibrary();
+}
+async function renameDoc(d) {
+  const name = await askText({ title: 'Cambiar nombre', label: 'Nombre del documento', value: d.name, ok: 'Guardar' });
+  if (!name || name === d.name) return;
+  d.name = name; await db.put('docs', d); renderLibrary();
+}
+async function deleteFolder(f) {
+  const [folders, docs] = await Promise.all([db.getAll('folders'), db.getAll('docs')]);
+  const parentName = f.parentId ? folders.find((x) => x.id === f.parentId)?.name || 'Biblioteca' : 'Biblioteca';
+  const inDocs = docs.filter((d) => d.folderId === f.id), inFolders = folders.filter((x) => x.parentId === f.id);
+  const n = inDocs.length + inFolders.length;
+  const msg = n ? `¿Eliminar la carpeta «${f.name}»?\n\nSu contenido (${n} elemento${n > 1 ? 's' : ''}) no se borra: pasará a «${parentName}».` : `¿Eliminar la carpeta «${f.name}»?`;
+  if (!confirm(msg)) return;
+  for (const d of inDocs) { d.folderId = f.parentId || null; await db.put('docs', d); }
+  for (const x of inFolders) { x.parentId = f.parentId || null; await db.put('folders', x); }
+  await db.del('folders', f.id);
+  if (LIB.folderId === f.id) LIB.folderId = f.parentId || null;
+  renderLibrary();
+}
+// Elegir carpeta de destino (funciona también en el móvil)
+async function moveItem(item) {
+  let folders = await db.getAll('folders');
+  const exclude = item.type === 'folder' ? descendants(folders, item.id) : new Set();
+  const current = item.type === 'doc' ? (await db.get('docs', item.id))?.folderId || null : folders.find((f) => f.id === item.id)?.parentId || null;
+  return new Promise((resolve) => {
+    let selected = current;
+    const list = h('div', { class: 'folder-list', role: 'listbox' });
+    const draw = () => {
+      list.replaceChildren();
+      const row = (id, name, depth) => {
+        const disabled = id && exclude.has(id);
+        const b = h('button', { type: 'button', class: `folder-row${selected === id ? ' sel' : ''}${id === current ? ' cur' : ''}`, disabled: disabled ? 'disabled' : null,
+          style: { paddingLeft: `${12 + depth * 18}px` }, role: 'option', 'aria-selected': String(selected === id) },
+        svgIcon(id ? ICON.folder : ICON.circle), h('span', {}, name), id === current ? h('span', { class: 'here' }, 'actual') : null);
+        b.addEventListener('click', () => { selected = id; draw(); });
+        list.append(b);
+      };
+      row(null, 'Biblioteca (sin carpeta)', 0);
+      const walk = (parent, depth) => {
+        for (const f of folders.filter((x) => (x.parentId || null) === parent).sort(byName)) { row(f.id, f.name, depth); walk(f.id, depth + 1); }
+      };
+      walk(null, 1);
+    };
+    draw();
+    const newBtn = h('button', { type: 'button', class: 'btn ghost' }, svgIcon(ICON.folderPlus), 'Nueva carpeta');
+    newBtn.addEventListener('click', async () => {
+      const name = await askText({ title: 'Nueva carpeta', label: `Dentro de «${selected ? folders.find((f) => f.id === selected)?.name : 'Biblioteca'}»`, value: '', ok: 'Crear' });
+      if (!name) return;
+      const f = { id: uid(), name, parentId: selected, createdAt: Date.now() };
+      await db.put('folders', f);
+      folders = await db.getAll('folders');
+      selected = f.id; draw();
+    });
+    const dlg = h('dialog', { class: 'move-dialog' },
+      h('form', { method: 'dialog' },
+        h('h3', {}, 'Mover a…'),
+        list,
+        h('div', { class: 'dialog-actions spread' }, newBtn,
+          h('div', { class: 'dialog-actions' },
+            h('button', { class: 'btn ghost', value: 'cancel', type: 'submit' }, 'Cancelar'),
+            h('button', { class: 'btn primary', value: 'ok', type: 'submit' }, 'Mover')))));
+    document.body.append(dlg);
+    dlg.addEventListener('close', async () => {
+      const ok = dlg.returnValue === 'ok';
+      dlg.remove();
+      if (ok) await moveTo(item, selected);
+      else renderLibrary();
+      resolve();
+    });
+    dlg.showModal();
+  });
+}
+
+/* Menú contextual pequeño */
+let menuEl = null;
+function closeMenu() { menuEl?.remove(); menuEl = null; }
+function showMenu(anchor, items) {
+  closeMenu();
+  menuEl = h('div', { class: 'ctx-menu', role: 'menu' }, items.map((it) => {
+    const b = h('button', { type: 'button', class: `ctx-item${it.danger ? ' danger' : ''}`, role: 'menuitem' }, svgIcon(it.icon), it.label);
+    b.addEventListener('click', (e) => { e.stopPropagation(); closeMenu(); it.fn(); });
+    return b;
+  }));
+  document.body.append(menuEl);
+  const r = anchor.getBoundingClientRect();
+  const mw = menuEl.offsetWidth, mh = menuEl.offsetHeight;
+  let left = Math.min(window.innerWidth - mw - 8, r.right - mw);
+  let top = r.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+  menuEl.style.left = `${Math.max(8, left)}px`; menuEl.style.top = `${top}px`;
+  menuEl.querySelector('button')?.focus();
+}
+document.addEventListener('pointerdown', (e) => { if (menuEl && !e.target.closest('.ctx-menu')) closeMenu(); }, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+window.addEventListener('scroll', closeMenu, { passive: true });
+
+/* Diálogo para escribir un nombre */
+function askText({ title, label, value = '', ok = 'Aceptar' }) {
+  return new Promise((resolve) => {
+    const input = h('input', { type: 'text', class: 'name-input', value, maxlength: '120' });
+    const dlg = h('dialog', { class: 'name-dialog' },
+      h('form', { method: 'dialog' },
+        h('h3', {}, title),
+        h('label', { class: 'name-label' }, label),
+        h('div', { class: 'name-row' }, input),
+        h('div', { class: 'dialog-actions' },
+          h('button', { class: 'btn ghost', value: 'cancel', type: 'submit' }, 'Cancelar'),
+          h('button', { class: 'btn primary', value: 'ok', type: 'submit' }, ok))));
+    document.body.append(dlg);
+    dlg.addEventListener('close', () => {
+      const v = input.value.trim().replace(/\s+/g, ' ');
+      dlg.remove();
+      resolve(dlg.returnValue === 'ok' && v ? v : null);
+    });
+    dlg.showModal();
+    input.focus(); input.select();
+  });
 }
 
 async function deleteDoc(d) {
@@ -169,7 +432,7 @@ async function importFiles(fileList) {
       await db.put('docs', {
         id, name: f.name.replace(/\.pdf$/i, ''), size: f.size, addedAt: Date.now(), openedAt: 0,
         pageCount: info.pageCount, pageChars: info.pageChars, thumb: info.thumb,
-        read: [], lastPage: 1, zoom: 1,
+        read: [], lastPage: 1, zoom: 1, folderId: LIB.folderId,
       });
     } catch (err) {
       console.error(err);
@@ -1725,7 +1988,8 @@ async function exportBackup() {
   try {
     const docs = await db.getAll('docs');
     const marks = await db.getAll('marks');
-    const parts = [`{"app":"study-app","version":1,"exportedAt":${Date.now()},"docs":${JSON.stringify(docs)},"marks":${JSON.stringify(marks)},"files":[`];
+    const folders = await db.getAll('folders');
+    const parts = [`{"app":"study-app","version":2,"exportedAt":${Date.now()},"folders":${JSON.stringify(folders)},"docs":${JSON.stringify(docs)},"marks":${JSON.stringify(marks)},"files":[`];
     for (const [i, d] of docs.entries()) {
       const f = await db.get('files', d.id);
       if (!f) continue;
@@ -1741,6 +2005,7 @@ async function importBackup(file) {
   try {
     const data = JSON.parse(await file.text());
     if (data.app !== 'study-app') throw new Error('Formato no válido');
+    for (const f of data.folders || []) await db.put('folders', f);
     for (const f of data.files || []) await db.put('files', { id: f.id, data: b64ToBuf(f.b64) });
     for (const d of data.docs || []) await db.put('docs', d);
     for (const m of data.marks || []) await db.put('marks', m);
@@ -1764,6 +2029,7 @@ function init() {
   $('#btnExport').addEventListener('click', exportAnnotated);
   $('#tagCancel').addEventListener('click', () => { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); });
   $('#btnBackup').addEventListener('click', () => $('#backupDialog').showModal());
+  $('#btnNewFolder').addEventListener('click', () => createFolder());
   $('#btnExportBackup').addEventListener('click', () => { $('#backupDialog').close(); exportBackup(); });
   $('#backupInput').addEventListener('change', (e) => { $('#backupDialog').close(); if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; });
   document.addEventListener('pointerdown', (e) => {

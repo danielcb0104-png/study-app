@@ -28,6 +28,10 @@
         <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         <span class="lbl">Copia</span>
       </button>
+      <button class="btn" id="btnNewFolder" title="Nueva carpeta">
+        <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M12 10.5v5M9.5 13h5"/></svg>
+        <span class="lbl">Nueva carpeta</span>
+      </button>
       <label class="btn primary" for="fileInput">
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
         <span>Añadir PDF</span>
@@ -37,7 +41,12 @@
   </header>
   <main class="libmain">
     <div id="dropHint" class="drop-hint" hidden>Suelta aquí tus PDF</div>
+    <nav id="crumbs" class="crumbs" aria-label="Carpetas"></nav>
     <div id="docGrid" class="grid"></div>
+    <div id="folderEmpty" class="folder-empty" hidden>
+      <p>Esta carpeta está vacía.</p>
+      <p class="sub">Añade PDF con «Añadir PDF» o arrastra documentos hasta aquí.</p>
+    </div>
     <div id="emptyState" class="empty" hidden>
       <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
       <h2>Tu biblioteca está vacía</h2>
