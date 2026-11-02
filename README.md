@@ -4,7 +4,7 @@ Lector de PDF para estudiar: marca las páginas leídas (con % de texto leído),
 fragmentos letra a letra y escribe comentarios en LaTeX en hojas de notas que se
 insertan tras cada página. Exporta el PDF con las notas.
 
-**Úsala aquí:** https://USUARIO.github.io/study-app/
+**Úsala aquí:** https://danielcb0104-png.github.io/study-app/
 
 - Funciona en ordenador, tablet y móvil, también sin conexión.
 - Para instalarla: en iPhone/iPad, Compartir → «Añadir a pantalla de inicio»; en Chrome/Edge,

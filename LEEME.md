@@ -50,16 +50,21 @@ al Dock o a la carpeta Aplicaciones.
 - `Abrir Study App.command` (esta carpeta) es una alternativa que usa la misma
   dirección y, por tanto, los mismos datos.
 
-## Usarla en el móvil
+## Usarla en el móvil (y compartirla)
 
-El móvil necesita abrirla desde una dirección https. La forma más sencilla:
+La app está publicada en **https://danielcb0104-png.github.io/study-app/**. Ese enlace
+se puede enviar a cualquiera (por WhatsApp, por ejemplo).
 
-1. Entra en https://app.netlify.com/drop y arrastra esta carpeta entera.
-2. Abre la dirección que te da en el móvil.
-3. iPhone (Safari): Compartir → «Añadir a pantalla de inicio».
-   Android (Chrome): menú → «Instalar aplicación».
+- iPhone/iPad (Safari): Compartir → «Añadir a pantalla de inicio».
+- Android (Chrome): menú ⋮ → «Instalar aplicación».
+- Ordenador (Chrome/Edge): botón de instalar en la barra de direcciones.
 
-Después funciona sin conexión. (Alternativa: GitHub Pages.)
+Después funciona sin conexión. Cada persona tiene sus propios PDF y notas en su
+dispositivo. Para llevar tus datos de un dispositivo a otro: «Copia» → descargar y,
+en el otro, «Copia» → restaurar.
+
+**Publicar una actualización:** abre GitHub Desktop → escribe un resumen → «Commit to
+main» → «Push origin». En 1–2 minutos el enlace tiene la versión nueva.
 
 ## Archivos
 
