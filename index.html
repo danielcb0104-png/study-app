@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3a5f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Study App">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Study App</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ BIBLIOTECA ============ -->
+<div id="library" class="view">
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="" width="28" height="28">
+      <h1>Study App</h1>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnBackup" title="Copia de seguridad">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        <span class="lbl">Copia</span>
+      </button>
+      <label class="btn primary" for="fileInput">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Añadir PDF</span>
+      </label>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+    </div>
+  </header>
+  <main class="libmain">
+    <div id="dropHint" class="drop-hint" hidden>Suelta aquí tus PDF</div>
+    <div id="docGrid" class="grid"></div>
+    <div id="emptyState" class="empty" hidden>
+      <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+      <h2>Tu biblioteca está vacía</h2>
+      <p>Añade un PDF para empezar a leer, marcar páginas y tomar notas.</p>
+      <label class="btn primary" for="fileInput">Añadir PDF</label>
+    </div>
+  </main>
+</div>
+
+<!-- ============ LECTOR ============ -->
+<div id="reader" class="view" hidden>
+  <header class="topbar reader-bar">
+    <button class="icon-btn" id="btnBack" title="Biblioteca" aria-label="Volver a la biblioteca">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="doc-title">
+      <div id="readerTitle" class="title"></div>
+      <div class="sub"><span id="pageIndicator">–</span> · <span id="progressText">0 % leído</span></div>
+    </div>
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Modo de marcado">
+        <button class="seg-btn active" id="modeText" title="Marcar seleccionando texto">
+          <svg viewBox="0 0 24 24"><path d="M4 7V5h16v2M12 5v14M9 19h6"/></svg><span class="lbl">Texto</span>
+        </button>
+        <button class="seg-btn" id="modeArea" title="Marcar dibujando un recuadro">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 2"/></svg><span class="lbl">Recuadro</span>
+        </button>
+      </div>
+      <div class="zoom">
+        <button class="icon-btn" id="zoomOut" title="Reducir" aria-label="Reducir"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+        <span id="zoomLabel">100 %</span>
+        <button class="icon-btn" id="zoomIn" title="Ampliar" aria-label="Ampliar"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <button class="icon-btn" id="btnExport" title="Exportar PDF con notas" aria-label="Exportar PDF con notas">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      </button>
+    </div>
+  </header>
+  <div class="progress-strip"><div id="progressBar"></div></div>
+  <main id="pages" class="pages"></main>
+</div>
+
+<!-- Popup de etiquetas al marcar -->
+<div id="tagPopup" class="tag-popup" hidden>
+  <div class="tag-row" id="tagRow"></div>
+  <button class="icon-btn small" id="tagCancel" aria-label="Cancelar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+
+<!-- Menú copia de seguridad -->
+<dialog id="backupDialog">
+  <form method="dialog">
+    <h3>Copia de seguridad</h3>
+    <p>Los datos se guardan solo en este dispositivo. Usa una copia para pasarlos a otro dispositivo o para no perderlos.</p>
+    <div class="dialog-actions col">
+      <button type="button" class="btn primary" id="btnExportBackup">Descargar copia (.json)</button>
+      <label class="btn" for="backupInput">Restaurar desde copia…</label>
+      <input type="file" id="backupInput" accept=".json,application/json" hidden>
+      <button class="btn ghost" value="close">Cerrar</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<div id="busy" class="busy" hidden><div class="spinner"></div><div id="busyText">Procesando…</div></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
