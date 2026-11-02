@@ -322,7 +322,7 @@ async function moveItem(item) {
       list.replaceChildren();
       const row = (id, name, depth) => {
         const disabled = id && exclude.has(id);
-        const b = h('button', { type: 'button', class: `folder-row${selected === id ? ' sel' : ''}${id === current ? ' cur' : ''}`, disabled: disabled ? 'disabled' : null,
+        const b = h('button', { type: 'button', class: `folder-row${selected === id ? ' is-sel' : ''}${id === current ? ' cur' : ''}`, disabled: disabled ? 'disabled' : null,
           style: { paddingLeft: `${12 + depth * 18}px` }, role: 'option', 'aria-selected': String(selected === id) },
         svgIcon(id ? ICON.folder : ICON.circle), h('span', {}, name), id === current ? h('span', { class: 'here' }, 'actual') : null);
         b.addEventListener('click', () => { selected = id; draw(); });

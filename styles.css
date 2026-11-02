@@ -137,7 +137,7 @@ svg:not(mjx-container svg) { width: 20px; height: 20px; fill: none; stroke: curr
 .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .page .mark-layer, .page .badge-layer, .page .area-layer, .page .sel-layer { position: absolute; inset: 0; }
 .page .sel-layer { z-index: 1; pointer-events: none; }
-.sel { position: absolute; background: rgba(0, 100, 255, .26); border-radius: 2px; }
+.sel-layer .sel { position: absolute; background: rgba(0, 100, 255, .26); border-radius: 2px; }
 .page { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .page .textLayer, .page .textLayer * { -webkit-user-select: none !important; user-select: none !important; }
 .page .textLayer span { cursor: text; }
@@ -383,12 +383,12 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .ctx-item:hover, .ctx-item:focus-visible { background: var(--surface-2); outline: none; }
 .ctx-item.danger, .ctx-item.danger svg { color: #c0392b; }
 .move-dialog { width: min(460px, calc(100vw - 32px)); }
-.folder-list { display: flex; flex-direction: column; gap: 2px; max-height: min(52vh, 420px); overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin: 4px 0 14px; background: var(--surface-2); }
+.folder-list { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; gap: 2px; max-height: min(52vh, 420px); overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin: 4px 0 14px; background: var(--surface-2); }
 .folder-row { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14.5px; padding: 8px 10px; border-radius: 8px; cursor: pointer; text-align: left; }
 .folder-row svg { width: 18px; height: 18px; color: var(--accent); flex: none; }
 .folder-row:hover { background: var(--surface); }
-.folder-row.sel { background: var(--accent); color: #fff; }
-.folder-row.sel svg { color: #fff; }
+.folder-row.is-sel { background: var(--accent); color: #fff; }
+.folder-row.is-sel svg { color: #fff; }
 .folder-row:disabled { opacity: .4; cursor: not-allowed; }
 .folder-row .here { margin-left: auto; font-size: 12px; opacity: .75; }
 .dialog-actions.spread { justify-content: space-between; align-items: center; flex-wrap: wrap; }
@@ -402,3 +402,7 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
   .actions .btn.ghost, #btnNewFolder { width: 40px; padding: 0; }
 }
 @media (max-width: 375px) { .brand h1 { display: none; } }
+/* La lista de carpetas no debe encoger sus filas (en Safari se solapaban) */
+.folder-list > .folder-row { min-height: 38px; min-width: 0; width: 100%; justify-self: stretch; box-sizing: border-box; }
+.folder-row > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.folder-row .here { flex: none; }
