@@ -510,3 +510,12 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .tag-btn.tag-correct svg { width: 15px; height: 15px; }
 .tag-btn.tag-correct:hover { background: color-mix(in srgb, #e3261c 24%, var(--surface)); }
 @media (prefers-color-scheme: dark) { .tag-btn.tag-correct { color: #f3867f; } }
+
+/* Descripciones */
+.card .desc { color: var(--muted); font-size: 13px; line-height: 1.35; white-space: pre-line; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: -4px; }
+.folder-desc { display: flex; align-items: flex-start; gap: 8px; margin: -6px 0 16px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 10px 10px 0; }
+.folder-desc p { margin: 0; flex: 1; color: var(--text); font-size: 14px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; }
+.folder-desc .icon-btn { flex: none; margin: -4px -4px 0 0; }
+.desc-dialog { width: min(520px, calc(100vw - 32px)); max-width: none; }
+.desc-input { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 110px; line-height: 1.45; }
+.desc-count { display: block; text-align: right; color: var(--muted); font-size: 11.5px; margin: 4px 0 14px; }

@@ -160,6 +160,7 @@ const ICON = {
   grip: '<circle cx="9" cy="7" r="1.1"/><circle cx="15" cy="7" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="17" r="1.1"/><circle cx="15" cy="17" r="1.1"/>',
   restore: '<path d="M4 12a8 8 0 108-8 8.3 8.3 0 00-5.7 2.3L4 8.6"/><path d="M4 4v4.6h4.6"/>',
   correct: '<path d="M3 13h8"/><path d="M13.5 19.5l7-7a2.1 2.1 0 00-3-3l-7 7-1 4z"/>',
+  note: '<path d="M5 4h14v16H5z"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -258,6 +259,15 @@ async function renderLibrary() {
   addCrumb('Biblioteca', null, path.length === 0);
   path.forEach((f, i) => addCrumb(f.name, f.id, i === path.length - 1));
   crumbs.hidden = folders.length === 0 && !cur;
+  const curF = cur ? folders.find((f) => f.id === cur) : null;
+  const fd = $('#folderDesc');
+  fd.replaceChildren();
+  fd.hidden = !curF?.desc;
+  if (curF?.desc) {
+    const edit = h('button', { type: 'button', class: 'icon-btn small', title: 'Editar descripción', 'aria-label': 'Editar descripción de la carpeta' }, svgIcon(ICON.edit));
+    edit.addEventListener('click', () => editDescription('folders', curF.id));
+    fd.append(h('p', {}, curF.desc), edit);
+  }
 
   const grid = $('#docGrid');
   grid.replaceChildren();
@@ -274,6 +284,7 @@ async function renderLibrary() {
       e.stopPropagation();
       showMenu(more, [
         { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameFolder(f) },
+        { label: f.desc ? 'Editar descripción' : 'Añadir descripción', icon: ICON.note, fn: () => editDescription('folders', f.id) },
         { label: 'Mover a…', icon: ICON.move, fn: () => moveItem({ type: 'folder', id: f.id }) },
         { label: 'Eliminar carpeta', icon: ICON.trash, danger: true, fn: () => deleteFolder(f) },
       ]);
@@ -282,6 +293,7 @@ async function renderLibrary() {
       h('div', { class: 'folder-icon' }, svgIcon(ICON.folder)),
       h('div', { class: 'body' },
         h('div', { class: 'name' }, f.name),
+        f.desc ? h('div', { class: 'desc', title: f.desc }, f.desc) : null,
         h('div', { class: 'meta' },
           h('span', {}, [nDocs ? `${nDocs} documento${nDocs > 1 ? 's' : ''}` : 'Vacía', nSub ? `${nSub} carpeta${nSub > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')),
           more)));
@@ -302,6 +314,7 @@ async function renderLibrary() {
         { label: 'Fusionar con otros…', icon: ICON.merge, fn: () => mergeDialog([d.id]) },
         ...(d.pageCount > 1 ? [{ label: 'Fisionar (separar en dos)…', icon: ICON.split, fn: () => splitDialog(d.id) }] : []),
         { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameDoc(d) },
+        { label: d.desc ? 'Editar descripción' : 'Añadir descripción', icon: ICON.note, fn: () => editDescription('docs', d.id) },
         { label: 'Mover a la papelera', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
       ]);
     });
@@ -309,6 +322,7 @@ async function renderLibrary() {
       h('div', { class: 'thumb' }, d.thumb ? h('img', { src: d.thumb, alt: '', draggable: 'false' }) : null),
       h('div', { class: 'body' },
         h('div', { class: 'name' }, d.name),
+        d.desc ? h('div', { class: 'desc', title: d.desc }, d.desc) : null,
         h('div', { class: 'bar' }, h('div', { style: { width: `${p * 100}%` } })),
         h('div', { class: 'meta' },
           h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.${counts[d.id] ? ` · ${counts[d.id]} notas` : ''}`),
@@ -374,6 +388,46 @@ async function createFolder(parentId = LIB.folderId) {
   await db.put('folders', f);
   renderLibrary();
   return f;
+}
+/* Descripción de documentos y carpetas (texto libre, varias líneas) */
+function askDescription({ title, label, value = '' }) {
+  return new Promise((resolve) => {
+    const ta = h('textarea', { class: 'name-input desc-input', rows: '5', maxlength: '1000', placeholder: 'Por ejemplo: de qué trata, asignatura, profesor, para qué examen es…' });
+    ta.value = value;
+    const count = h('small', { class: 'desc-count' });
+    const upd = () => { count.textContent = `${ta.value.length} / 1000`; };
+    ta.addEventListener('input', upd); upd();
+    const clear = h('button', { class: 'btn ghost danger', value: 'clear', type: 'submit' }, 'Quitar descripción');
+    if (!value) clear.hidden = true;
+    const dlg = h('dialog', { class: 'name-dialog desc-dialog' },
+      h('form', { method: 'dialog' },
+        h('h3', {}, title),
+        h('label', { class: 'name-label' }, label),
+        ta, count,
+        h('div', { class: 'dialog-actions spread' }, clear,
+          h('div', { class: 'dialog-actions' },
+            h('button', { class: 'btn ghost', value: 'cancel', type: 'submit' }, 'Cancelar'),
+            h('button', { class: 'btn primary', value: 'ok', type: 'submit' }, 'Guardar')))));
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); dlg.close('ok'); } });
+    document.body.append(dlg);
+    dlg.addEventListener('close', () => {
+      const v = ta.value.replace(/[ \t]+\n/g, '\n').trim();
+      dlg.remove();
+      resolve(dlg.returnValue === 'ok' ? v : dlg.returnValue === 'clear' ? '' : null);
+    });
+    dlg.showModal();
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  });
+}
+async function editDescription(store, id) {
+  const item = await db.get(store, id);
+  if (!item) return;
+  const isDoc = store === 'docs';
+  const v = await askDescription({ title: `Descripción ${isDoc ? 'del documento' : 'de la carpeta'}`, label: `«${item.name}»`, value: item.desc || '' });
+  if (v === null) return;
+  if (v) item.desc = v; else delete item.desc;
+  await db.put(store, item);
+  renderLibrary();
 }
 async function renameFolder(f) {
   const name = await askText({ title: 'Cambiar nombre', label: 'Nombre de la carpeta', value: f.name, ok: 'Guardar' });
@@ -742,7 +796,7 @@ async function splitDoc(id, cut, names) {
         pageCount: info.pageCount, pageChars: info.pageChars, thumb: info.thumb,
         read: (doc.read || []).filter((p) => p >= a && p <= b).map((p) => p - a + 1),
         lastPage: 1, zoom: doc.zoom || 1, folderId: doc.folderId || null,
-        lang: doc.lang || info.lang, splitFrom: { id, pages: [a, b] },
+        lang: doc.lang || info.lang, splitFrom: { id, pages: [a, b] }, ...(doc.desc ? { desc: doc.desc } : {}),
       });
       for (const m of marks) await db.put('marks', m);
       created.push(`«${names[k]}» (${b - a + 1} pág.)`);
@@ -901,6 +955,7 @@ function renderTrash(trashed, folders) {
   crumbs.hidden = false;
   $('#emptyState').hidden = true;
   $('#folderEmpty').hidden = true;
+  $('#folderDesc').hidden = true;
   const bar = $('#trashBar');
   bar.hidden = false;
   $('#trashInfo').textContent = trashed.length
