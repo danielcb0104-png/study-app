@@ -1364,6 +1364,13 @@ function scrollToPage(num, smooth = true) {
   window.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
 }
 
+// Zoom de 10 % en 10 % (ajustado a múltiplos de 10 %: 125 % → 130 % / 120 %)
+function zoomStep(dir) {
+  const cur = R.doc?.zoom || 1;
+  const t = Math.round(cur * 100);
+  const next = dir > 0 ? (Math.floor(t / 10) + 1) * 10 : (Math.ceil(t / 10) - 1) * 10;
+  return setZoom(next / 100);
+}
 async function setZoom(z) {
   z = Math.max(0.5, Math.min(4, Math.round(z * 100) / 100));
   if (!R.doc || z === R.doc.zoom) return;
@@ -2968,8 +2975,8 @@ function init() {
   $('#btnBack').addEventListener('click', () => closeReader());
   $('#modeText').addEventListener('click', () => setMode('text'));
   $('#modeArea').addEventListener('click', () => setMode('area'));
-  $('#zoomIn').addEventListener('click', () => setZoom((R.doc?.zoom || 1) + 0.25));
-  $('#zoomOut').addEventListener('click', () => setZoom((R.doc?.zoom || 1) - 0.25));
+  $('#zoomIn').addEventListener('click', () => zoomStep(1));
+  $('#zoomOut').addEventListener('click', () => zoomStep(-1));
   $('#btnExport').addEventListener('click', exportAnnotated);
   $('#btnLang').addEventListener('click', (e) => chooseLang(e.currentTarget));
   $('#tagCancel').addEventListener('click', () => { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); });
@@ -2989,8 +2996,8 @@ function init() {
 
   document.addEventListener('keydown', (e) => {
     if ($('#reader').hidden || e.target.matches('textarea, input, select') || e.target.closest?.('.tex-editor') || document.body.classList.contains('editing')) return;
-    if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) { e.preventDefault(); setZoom((R.doc?.zoom || 1) + 0.25); }
-    else if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); setZoom((R.doc?.zoom || 1) - 0.25); }
+    if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(1); }
+    else if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); zoomStep(-1); }
     else if (e.key === 'Escape') { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); }
     else if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && S && !S.active) { e.preventDefault(); moveFocus(e.key === 'ArrowLeft' ? -1 : 1); }
     else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && S && !S.active) { e.preventDefault(); navigator.clipboard?.writeText(selText()).then(() => toast('Texto copiado')).catch(() => {}); }
