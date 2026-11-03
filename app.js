@@ -37,7 +37,7 @@ const I18N = {
     addCommentTip: 'Marcar y escribir un comentario en la página de notas', markAs: (n) => `Marcar como «${n}»`,
     editTip: 'Escribir / editar comentario (LaTeX)', upTip: 'Ver en la página', delTip: 'Eliminar nota', bodyTip: 'Pulsa para editar (LaTeX)',
     tags: { imp: 'Importante', def: 'Definición', obs: 'Observación', ej: 'Ejemplo', com: 'Comentario', cor: 'Corregir', duda: 'Duda', idea: 'Idea' },
-    corrPh: 'Escribe la corrección…', corrHint: 'Intro: guardar · Mayús+Intro: nueva línea', save: 'Guardar', removeMark: 'Quitar la marca', corrTip: 'Pulsa para editar la corrección',
+    corrPh: 'Escribe la corrección…', corrHint: 'Intro: guardar · Mayús+Intro: nueva línea', save: 'Guardar', removeMark: 'Quitar la marca', corrTip: 'Pulsa para editar la corrección', corrBtnTip: 'Marcar en rojo y escribir la corrección al margen',
   },
   ca: {
     notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
@@ -49,7 +49,7 @@ const I18N = {
     addCommentTip: 'Marcar i escriure un comentari a la pàgina de notes', markAs: (n) => `Marcar com a «${n}»`,
     editTip: 'Escriure / editar el comentari (LaTeX)', upTip: 'Veure a la pàgina', delTip: 'Eliminar la nota', bodyTip: 'Fes clic per editar (LaTeX)',
     tags: { imp: 'Important', def: 'Definició', obs: 'Observació', ej: 'Exemple', com: 'Comentari', cor: 'Corregir', duda: 'Dubte', idea: 'Idea' },
-    corrPh: 'Escriu la correcció…', corrHint: 'Retorn: desar · Maj+Retorn: línia nova', save: 'Desa', removeMark: 'Treure la marca', corrTip: 'Fes clic per editar la correcció',
+    corrPh: 'Escriu la correcció…', corrHint: 'Retorn: desar · Maj+Retorn: línia nova', save: 'Desa', removeMark: 'Treure la marca', corrTip: 'Fes clic per editar la correcció', corrBtnTip: 'Marcar en vermell i escriure la correcció al marge',
   },
   en: {
     notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
@@ -61,7 +61,7 @@ const I18N = {
     addCommentTip: 'Mark and write a comment on the notes page', markAs: (n) => `Mark as “${n}”`,
     editTip: 'Write / edit comment (LaTeX)', upTip: 'Show on the page', delTip: 'Delete note', bodyTip: 'Click to edit (LaTeX)',
     tags: { imp: 'Important', def: 'Definition', obs: 'Remark', ej: 'Example', com: 'Comment', cor: 'Correct', duda: 'Question', idea: 'Idea' },
-    corrPh: 'Type the correction…', corrHint: 'Enter: save · Shift+Enter: new line', save: 'Save', removeMark: 'Remove mark', corrTip: 'Click to edit the correction',
+    corrPh: 'Type the correction…', corrHint: 'Enter: save · Shift+Enter: new line', save: 'Save', removeMark: 'Remove mark', corrTip: 'Click to edit the correction', corrBtnTip: 'Mark in red and write the correction in the margin',
   },
 };
 const docLang = () => (I18N[R.doc?.lang] ? R.doc.lang : 'es');
@@ -159,6 +159,7 @@ const ICON = {
   arrowDown: '<path d="M12 5v13M6.5 12.5L12 18l5.5-5.5"/>',
   grip: '<circle cx="9" cy="7" r="1.1"/><circle cx="15" cy="7" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="17" r="1.1"/><circle cx="15" cy="17" r="1.1"/>',
   restore: '<path d="M4 12a8 8 0 108-8 8.3 8.3 0 00-5.7 2.3L4 8.6"/><path d="M4 4v4.6h4.6"/>',
+  correct: '<path d="M3 13h8"/><path d="M13.5 19.5l7-7a2.1 2.1 0 00-3-3l-7 7-1 4z"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -2004,7 +2005,7 @@ function hidePopup() { $('#tagPopup').hidden = true; pending = null; }
 function labelTagRow() {
   document.querySelectorAll('#tagRow .tag-btn[data-tag]').forEach((b) => {
     const n = tagName(tagById(b.dataset.tag));
-    b.querySelector('.tag-name').textContent = n; b.title = T('markAs')(n);
+    b.querySelector('.tag-name').textContent = n; b.title = b.dataset.tag === 'cor' ? T('corrBtnTip') : T('markAs')(n);
   });
   const com = document.querySelector('#tagRow .tag-comment');
   if (com) { com.querySelector('.tag-name').textContent = T('addComment'); com.title = T('addCommentTip'); }
@@ -2014,7 +2015,10 @@ function buildTagRow() {
   const take = () => { const d = pending; hidePopup(); clearSelection(); $('.draft-rect')?.remove(); return d; };
   const tagBtns = MARK_TAGS.map((id) => {
     const t = tagById(id);
-    const b = h('button', { class: 'tag-btn', 'data-tag': id }, h('i'), h('span', { class: 'tag-name' }));
+    // «Corregir» se ve como «Añadir comentario» (los dos añaden texto propio)
+    const b = id === 'cor'
+      ? h('button', { class: 'tag-btn tag-write tag-correct', 'data-tag': id }, svgIcon(ICON.correct), h('span', { class: 'tag-name' }))
+      : h('button', { class: 'tag-btn', 'data-tag': id }, h('i'), h('span', { class: 'tag-name' }));
     b.style.setProperty('--c', t.color);
     // pointerdown + preventDefault para no perder la selección
     b.addEventListener('pointerdown', (e) => e.preventDefault());
@@ -2032,7 +2036,7 @@ function buildTagRow() {
     });
     return b;
   });
-  const com = h('button', { class: 'tag-btn tag-comment' }, svgIcon(ICON.edit), h('span', { class: 'tag-name' }));
+  const com = h('button', { class: 'tag-btn tag-write tag-comment' }, svgIcon(ICON.edit), h('span', { class: 'tag-name' }));
   com.addEventListener('pointerdown', (e) => e.preventDefault());
   com.addEventListener('click', async () => {
     if (!pending) return;
@@ -2041,7 +2045,8 @@ function buildTagRow() {
     await captureMathImage(d);
     await createMark({ ...d, tag: 'com', note: true });
   });
-  row.replaceChildren(...tagBtns, h('span', { class: 'tag-sep' }), com);
+  const colorBtns = tagBtns.filter((b) => b.dataset.tag !== 'cor'), corBtn = tagBtns.find((b) => b.dataset.tag === 'cor');
+  row.replaceChildren(...colorBtns, h('span', { class: 'tag-sep' }), corBtn, com);
   labelTagRow();
   $('#tagRemove').addEventListener('pointerdown', (e) => e.preventDefault());
   $('#tagRemove').addEventListener('click', async () => {

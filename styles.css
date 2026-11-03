@@ -504,3 +504,9 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .btn.small { min-height: 32px; padding: 0 12px; font-size: 13.5px; }
 .hl.corr-hover { outline: 2px solid #e3261c; outline-offset: 1px; }
 .corr-layer .corr.hover { background: #fff; box-shadow: 0 0 0 2px rgba(227,38,28,.3); }
+
+/* «Corregir» con la misma estética que «Añadir comentario» */
+.tag-btn.tag-correct { background: color-mix(in srgb, #e3261c 12%, var(--surface)); color: #b81d14; }
+.tag-btn.tag-correct svg { width: 15px; height: 15px; }
+.tag-btn.tag-correct:hover { background: color-mix(in srgb, #e3261c 24%, var(--surface)); }
+@media (prefers-color-scheme: dark) { .tag-btn.tag-correct { color: #f3867f; } }
