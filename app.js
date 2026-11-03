@@ -149,10 +149,12 @@ const ICON = {
   chevron: '<path d="M9 6l6 6-6 6"/>',
   bullets: '<rect x="2.5" y="4.5" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><rect x="2.5" y="10.2" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><rect x="2.5" y="15.9" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><path d="M9.5 6.3h12M9.5 12h12M9.5 17.7h12"/>',
   numbers: '<g style="fill:var(--ico-accent);stroke:none;font:700 7.8px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.4" y="9.1">1</text><text x="4.4" y="14.8">2</text><text x="4.4" y="20.5">3</text></g><path d="M9.5 6.3h12M9.5 12h12M9.5 17.7h12"/>',
-  merge: '<path d="M6 3v5a4 4 0 004 4h4a4 4 0 014 4v5"/><path d="M18 3v5a4 4 0 01-4 4"/><path d="M15 18l3 3 3-3"/>',
+  merge: '<path d="M6 3v4c0 4 6 5 6 9v5"/><path d="M18 3v4c0 4-6 5-6 9"/><path d="M9 18l3 3 3-3"/>',
+  split: '<path d="M12 3v5c0 4-6 5-6 9v4"/><path d="M12 8c0 4 6 5 6 9v4"/><path d="M3.5 18.5L6 21l2.5-2.5M15.5 18.5L18 21l2.5-2.5"/>',
   arrowUp: '<path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/>',
   arrowDown: '<path d="M12 5v13M6.5 12.5L12 18l5.5-5.5"/>',
   grip: '<circle cx="9" cy="7" r="1.1"/><circle cx="15" cy="7" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="17" r="1.1"/><circle cx="15" cy="17" r="1.1"/>',
+  restore: '<path d="M4 12a8 8 0 108-8 8.3 8.3 0 00-5.7 2.3L4 8.6"/><path d="M4 4v4.6h4.6"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -196,7 +198,8 @@ function progressOf(doc) {
 /* ---------- Carpetas ----------
    Cada documento tiene folderId (null = raíz de la biblioteca). Las carpetas se
    pueden anidar: {id, name, parentId, createdAt}. */
-const LIB = { folderId: null };
+const LIB = { folderId: null, trash: false };
+const live = (d) => !d.trashedAt; // documentos que no están en la papelera
 try { LIB.folderId = localStorage.getItem('study-folder') || null; } catch {}
 function setFolder(id) {
   LIB.folderId = id || null;
@@ -220,7 +223,14 @@ function descendants(folders, id) {
 }
 
 async function renderLibrary() {
-  const [docsAll, folders, allMarks] = await Promise.all([db.getAll('docs'), db.getAll('folders'), db.getAll('marks')]);
+  const [docsEvery, folders, allMarks] = await Promise.all([db.getAll('docs'), db.getAll('folders'), db.getAll('marks')]);
+  const trashed = docsEvery.filter((d) => !live(d));
+  const docsAll = docsEvery.filter(live);
+  const tc = $('#trashCount');
+  tc.textContent = String(trashed.length); tc.hidden = !trashed.length;
+  $('#btnTrash').classList.toggle('active', LIB.trash);
+  if (LIB.trash) return renderTrash(trashed, folders);
+  $('#trashBar').hidden = true;
   if (LIB.folderId && !folders.some((f) => f.id === LIB.folderId)) LIB.folderId = null;
   const cur = LIB.folderId;
   const counts = {};
@@ -284,9 +294,10 @@ async function renderLibrary() {
       e.stopPropagation();
       showMenu(more, [
         { label: 'Mover a carpeta…', icon: ICON.move, fn: () => moveItem({ type: 'doc', id: d.id }) },
-        { label: 'Combinar con otros…', icon: ICON.merge, fn: () => mergeDialog([d.id]) },
+        { label: 'Fusionar con otros…', icon: ICON.merge, fn: () => mergeDialog([d.id]) },
+        ...(d.pageCount > 1 ? [{ label: 'Fisionar (separar en dos)…', icon: ICON.split, fn: () => splitDialog(d.id) }] : []),
         { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameDoc(d) },
-        { label: 'Eliminar', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
+        { label: 'Mover a la papelera', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
       ]);
     });
     const card = h('div', { class: 'card', onclick: () => openDoc(d.id), title: d.name, draggable: 'true' },
@@ -351,6 +362,7 @@ async function moveTo(item, folderId) {
 }
 
 async function createFolder(parentId = LIB.folderId) {
+  LIB.trash = false;
   const name = await askText({ title: 'Nueva carpeta', label: 'Nombre de la carpeta', value: '', ok: 'Crear' });
   if (!name) return null;
   const f = { id: uid(), name, parentId: parentId || null, createdAt: Date.now() };
@@ -372,7 +384,7 @@ async function deleteFolder(f) {
   const [folders, docs] = await Promise.all([db.getAll('folders'), db.getAll('docs')]);
   const parentName = f.parentId ? folders.find((x) => x.id === f.parentId)?.name || 'Biblioteca' : 'Biblioteca';
   const inDocs = docs.filter((d) => d.folderId === f.id), inFolders = folders.filter((x) => x.parentId === f.id);
-  const n = inDocs.length + inFolders.length;
+  const n = inDocs.filter(live).length + inFolders.length;
   const msg = n ? `¿Eliminar la carpeta «${f.name}»?\n\nSu contenido (${n} elemento${n > 1 ? 's' : ''}) no se borra: pasará a «${parentName}».` : `¿Eliminar la carpeta «${f.name}»?`;
   if (!confirm(msg)) return;
   for (const d of inDocs) { d.folderId = f.parentId || null; await db.put('docs', d); }
@@ -439,7 +451,8 @@ async function moveItem(item) {
    COMBINAR DOCUMENTOS (PDF + notas) en uno nuevo
    ========================================================= */
 async function mergeDialog(preselected = []) {
-  const [docs, folders] = await Promise.all([db.getAll('docs'), db.getAll('folders')]);
+  const [docsEvery, folders] = await Promise.all([db.getAll('docs'), db.getAll('folders')]);
+  const docs = docsEvery.filter(live);
   if (docs.length < 2) { toast('Necesitas al menos dos documentos en la biblioteca'); return; }
   const where = (d) => folderPath(folders, d.folderId || null).map((f) => f.name).join(' › ') || 'Biblioteca';
   docs.sort((a, b) => where(a).localeCompare(where(b), 'es') || byName(a, b));
@@ -459,8 +472,8 @@ async function mergeDialog(preselected = []) {
       h('div', { class: 'dialog-actions' }, back, next)));
 
   const drawSelect = () => {
-    title.textContent = 'Combinar documentos';
-    sub.textContent = 'Elige los documentos que quieres juntar (dos o más). Sus notas también se copiarán.';
+    title.textContent = 'Fusionar documentos';
+    sub.textContent = 'Elige los documentos que quieres fusionar en uno (dos o más). Sus notas también se copiarán.';
     const list = h('div', { class: 'folder-list merge-list' });
     let lastWhere = null;
     for (const d of docs) {
@@ -483,7 +496,7 @@ async function mergeDialog(preselected = []) {
     updateButtons();
   };
   const drawOrder = () => {
-    title.textContent = '¿En qué orden los combino?';
+    title.textContent = '¿En qué orden los fusiono?';
     sub.textContent = 'El primero de la lista irá al principio. Usa las flechas o arrastra para cambiar el orden.';
     const list = h('ol', { class: 'merge-order' });
     const move = (i, j) => { if (j < 0 || j >= order.length) return; const [x] = order.splice(i, 1); order.splice(j, 0, x); refresh(); };
@@ -516,7 +529,7 @@ async function mergeDialog(preselected = []) {
   // Paso 3: nombre del nuevo documento
   const drawName = () => {
     title.textContent = 'Nombre del nuevo documento';
-    sub.textContent = '¿Cómo quieres que se llame el documento combinado?';
+    sub.textContent = '¿Cómo quieres que se llame el documento fusionado?';
     if (!nameTouched) nameInput.value = defaultName();
     const err = h('p', { class: 'merge-err', hidden: true }, 'Escribe un nombre para el documento.');
     nameInput.oninput = () => { nameTouched = true; err.hidden = true; next.disabled = !nameInput.value.trim(); };
@@ -549,8 +562,198 @@ async function mergeDialog(preselected = []) {
   dlg.showModal();
 }
 
+/* =========================================================
+   FISIONAR: separar un documento en dos (con sus notas)
+   ========================================================= */
+async function splitDialog(preId = null) {
+  const [docsAll, folders] = await Promise.all([db.getAll('docs'), db.getAll('folders')]);
+  const docs = docsAll.filter((d) => live(d) && (d.pageCount || 0) > 1);
+  if (!docs.length) { toast('No hay ningún documento con más de una página'); return; }
+  const where = (d) => folderPath(folders, d.folderId || null).map((f) => f.name).join(' › ') || 'Biblioteca';
+  docs.sort((a, b) => where(a).localeCompare(where(b), 'es') || byName(a, b));
+  let doc = docs.find((d) => d.id === preId) || null;
+  let cut = 2; // primera página de la segunda parte
+  let pdfP = null, pdfFor = null, thumbT = null;
+  let step = doc ? 2 : 1;
+  const title = h('h3'), sub = h('p', { class: 'merge-sub' }), content = h('div', { class: 'merge-body' });
+  const back = h('button', { type: 'button', class: 'btn ghost' });
+  const next = h('button', { type: 'button', class: 'btn primary' });
+  const name1 = h('input', { type: 'text', class: 'name-input', maxlength: '120' });
+  const name2 = h('input', { type: 'text', class: 'name-input', maxlength: '120' });
+  let namesFor = null;
+  const dlg = h('dialog', { class: 'merge-dialog split-dialog' },
+    h('form', { method: 'dialog', onsubmit: (e) => e.preventDefault() }, title, sub, content, h('div', { class: 'dialog-actions' }, back, next)));
+  const range = (a, b) => (a === b ? `pág. ${a}` : `págs. ${a}–${b}`);
+
+  const drawPick = () => {
+    title.textContent = 'Fisionar un documento';
+    sub.textContent = 'Elige el documento que quieres separar en dos. Sus notas se repartirán entre las dos partes.';
+    const list = h('div', { class: 'folder-list merge-list', role: 'radiogroup' });
+    let lastWhere = null;
+    for (const d of docs) {
+      const w = where(d);
+      if (w !== lastWhere) { list.append(h('div', { class: 'merge-group' }, w)); lastWhere = w; }
+      const rb = h('input', { type: 'radio', name: 'splitdoc' }); rb.checked = doc?.id === d.id;
+      const row = h('label', { class: `folder-row merge-row${rb.checked ? ' is-on' : ''}` }, rb, h('span', {}, d.name), h('span', { class: 'here' }, `${d.pageCount} pág.`));
+      rb.addEventListener('change', () => { doc = d; list.querySelectorAll('.merge-row').forEach((r) => r.classList.toggle('is-on', r === row)); next.disabled = false; });
+      row.addEventListener('dblclick', () => { doc = d; next.click(); });
+      list.append(row);
+    }
+    content.replaceChildren(list);
+    back.textContent = 'Cancelar'; next.textContent = 'Siguiente'; next.disabled = !doc;
+  };
+
+  // el PDF se carga una sola vez (aunque se pidan dos miniaturas a la vez)
+  const getPdf = () => {
+    if (pdfFor !== doc.id) {
+      const old = pdfP; pdfFor = doc.id;
+      pdfP = (async () => {
+        old?.then((x) => x.destroy()).catch(() => {});
+        const file = await db.get('files', doc.id);
+        return pdfjsLib.getDocument({ data: file.data.slice(0) }).promise;
+      })();
+    }
+    return pdfP;
+  };
+  const thumb = async (canvas, num) => {
+    const tok = (canvas._tok = (canvas._tok || 0) + 1);
+    try {
+      const page = await (await getPdf()).getPage(num);
+      const v0 = page.getViewport({ scale: 1 });
+      const v = page.getViewport({ scale: (120 * (window.devicePixelRatio || 1)) / v0.width });
+      const off = document.createElement('canvas');
+      off.width = Math.round(v.width); off.height = Math.round(v.height);
+      await page.render({ canvasContext: off.getContext('2d'), viewport: v }).promise;
+      if (canvas._tok !== tok) return; // ya se pidió otra página
+      canvas.width = off.width; canvas.height = off.height;
+      canvas.getContext('2d').drawImage(off, 0, 0);
+    } catch (e) { console.warn(e); }
+  };
+  const drawCut = () => {
+    const n = doc.pageCount;
+    cut = Math.min(Math.max(cut, 2), n);
+    title.textContent = '¿Dónde lo separo?';
+    sub.textContent = `«${doc.name}» tiene ${n} páginas. Elige la página con la que empieza la segunda parte.`;
+    const num = h('input', { type: 'number', class: 'name-input split-num', min: '2', max: String(n), value: String(cut), inputmode: 'numeric' });
+    const slider = h('input', { type: 'range', class: 'split-range', min: '2', max: String(n), value: String(cut) });
+    const c1 = h('canvas'), c2 = h('canvas');
+    const cap1 = h('small'), cap2 = h('small');
+    const summary = h('div', { class: 'split-summary' });
+    const update = (v, from) => {
+      cut = Math.min(Math.max(parseInt(v, 10) || 2, 2), n);
+      if (from !== num) num.value = String(cut);
+      if (from !== slider) slider.value = String(cut);
+      cap1.textContent = `pág. ${cut - 1}`; cap2.textContent = `pág. ${cut}`;
+      summary.replaceChildren(
+        h('div', {}, h('b', {}, 'Parte 1: '), `${range(1, cut - 1)} (${cut - 1})`),
+        h('div', {}, h('b', {}, 'Parte 2: '), `${range(cut, n)} (${n - cut + 1})`));
+      clearTimeout(thumbT);
+      thumbT = setTimeout(() => { thumb(c1, cut - 1); thumb(c2, cut); }, 120);
+    };
+    num.addEventListener('input', () => { if (num.value !== '') update(num.value, num); });
+    num.addEventListener('change', () => update(num.value, null));
+    slider.addEventListener('input', () => update(slider.value, slider));
+    content.replaceChildren(
+      h('label', { class: 'name-label' }, 'Primera página de la segunda parte'),
+      h('div', { class: 'split-pick' }, num, n > 2 ? slider : null),
+      h('div', { class: 'split-preview' },
+        h('figure', {}, c1, h('figcaption', {}, 'Fin de la parte 1 · ', cap1)),
+        h('div', { class: 'split-scissors', 'aria-hidden': 'true' }, '✂'),
+        h('figure', {}, c2, h('figcaption', {}, 'Inicio de la parte 2 · ', cap2))),
+      summary);
+    update(cut, null);
+    back.textContent = preId && step === 2 && doc.id === preId ? 'Cancelar' : 'Atrás';
+    next.textContent = 'Siguiente'; next.disabled = false;
+  };
+
+  const drawNames = () => {
+    const n = doc.pageCount;
+    title.textContent = 'Nombres de los dos documentos';
+    sub.textContent = '¿Cómo quieres que se llamen las dos partes?';
+    const key = `${doc.id}|${cut}`;
+    if (namesFor !== key) { name1.value = `${doc.name} (1)`; name2.value = `${doc.name} (2)`; namesFor = key; }
+    const err = h('p', { class: 'merge-err', hidden: true }, 'Escribe un nombre para cada documento.');
+    const check = () => { err.hidden = true; next.disabled = !name1.value.trim() || !name2.value.trim(); };
+    name1.oninput = check; name2.oninput = check;
+    name1.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); name2.focus(); name2.select(); } };
+    name2.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); next.click(); } };
+    content.replaceChildren(
+      h('label', { class: 'name-label' }, `Parte 1 · ${range(1, cut - 1)}`), h('div', { class: 'name-row' }, name1),
+      h('label', { class: 'name-label' }, `Parte 2 · ${range(cut, n)}`), h('div', { class: 'name-row' }, name2), err,
+      h('p', { class: 'merge-note' }, `Se guardarán en «${where(doc)}». El documento original no cambia.`));
+    back.textContent = 'Atrás'; next.textContent = 'Crear documentos';
+    check();
+    setTimeout(() => { name1.focus(); name1.select(); }, 0);
+  };
+
+  const draw = () => (step === 1 ? drawPick() : step === 2 ? drawCut() : drawNames());
+  back.addEventListener('click', () => {
+    if (step === 1 || (step === 2 && back.textContent === 'Cancelar')) { dlg.close(); return; }
+    step--; draw();
+  });
+  next.addEventListener('click', async () => {
+    if (step === 1) { if (!doc) return; step = 2; draw(); return; }
+    if (step === 2) { step = 3; draw(); return; }
+    const n1 = name1.value.trim().replace(/\s+/g, ' '), n2 = name2.value.trim().replace(/\s+/g, ' ');
+    if (!n1 || !n2) { content.querySelector('.merge-err').hidden = false; return; }
+    dlg.close();
+    await splitDoc(doc.id, cut, [n1, n2]);
+  });
+  dlg.addEventListener('close', () => { clearTimeout(thumbT); pdfP?.then((x) => x.destroy()).catch(() => {}); dlg.remove(); });
+  document.body.append(dlg);
+  draw();
+  dlg.showModal();
+}
+
+async function splitDoc(id, cut, names) {
+  busy(true, 'Fisionando el documento…');
+  try {
+    const { PDFDocument } = await loadPdfLib();
+    const [doc, file] = await Promise.all([db.get('docs', id), db.get('files', id)]);
+    if (!doc || !file) throw new Error('Documento no encontrado');
+    const src = await PDFDocument.load(file.data.slice(0), { ignoreEncryption: true });
+    const n = src.getPageCount();
+    if (cut < 2 || cut > n) throw new Error('Página de separación no válida');
+    const allMarks = await db.marksOf(id);
+    const parts = [[1, cut - 1], [cut, n]];
+    const created = [];
+    for (const [k, [a, b]] of parts.entries()) {
+      busy(true, `Fisionando el documento… (${k + 1}/2)`);
+      const out = await PDFDocument.create();
+      const pages = await out.copyPages(src, Array.from({ length: b - a + 1 }, (_, i) => a - 1 + i));
+      pages.forEach((pg) => out.addPage(pg));
+      const bytes = await out.save();
+      const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      const info = await analyzePdf(buf.slice(0));
+      const newId = uid();
+      const marks = allMarks.filter((m) => m.page >= a && m.page <= b).map((m) => {
+        const c = structuredClone(m);
+        c.id = uid(); c.docId = newId; c.page = m.page - a + 1;
+        return c;
+      });
+      await db.put('files', { id: newId, data: buf });
+      await db.put('docs', {
+        id: newId, name: names[k], size: buf.byteLength, addedAt: Date.now() + k, openedAt: 0,
+        pageCount: info.pageCount, pageChars: info.pageChars, thumb: info.thumb,
+        read: (doc.read || []).filter((p) => p >= a && p <= b).map((p) => p - a + 1),
+        lastPage: 1, zoom: doc.zoom || 1, folderId: doc.folderId || null,
+        lang: doc.lang || info.lang, splitFrom: { id, pages: [a, b] },
+      });
+      for (const m of marks) await db.put('marks', m);
+      created.push(`«${names[k]}» (${b - a + 1} pág.)`);
+    }
+    busy(false);
+    await renderLibrary();
+    toast(`Creados ${created.join(' y ')}`);
+  } catch (err) {
+    console.error(err);
+    busy(false);
+    toast(`No se pudo fisionar el documento${err?.message ? `: ${err.message}` : ''}`);
+  }
+}
+
 async function mergeDocs(ids, name) {
-  busy(true, 'Combinando documentos…');
+  busy(true, 'Fusionando documentos…');
   try {
     const { PDFDocument } = await loadPdfLib();
     const out = await PDFDocument.create();
@@ -559,7 +762,7 @@ async function mergeDocs(ids, name) {
     let firstLang = null;
     let offset = 0;
     for (const [k, id] of ids.entries()) {
-      busy(true, `Combinando documentos… (${k + 1}/${ids.length})`);
+      busy(true, `Fusionando documentos… (${k + 1}/${ids.length})`);
       const [doc, file] = await Promise.all([db.get('docs', id), db.get('files', id)]);
       if (!doc || !file) throw new Error('Documento no encontrado');
       const src = await PDFDocument.load(file.data.slice(0), { ignoreEncryption: true });
@@ -592,7 +795,7 @@ async function mergeDocs(ids, name) {
   } catch (err) {
     console.error(err);
     busy(false);
-    toast(`No se pudieron combinar los documentos${err?.message ? `: ${err.message}` : ''}`);
+    toast(`No se pudieron fusionar los documentos${err?.message ? `: ${err.message}` : ''}`);
   }
 }
 
@@ -642,16 +845,83 @@ function askText({ title, label, value = '', ok = 'Aceptar' }) {
   });
 }
 
+/* ---------- Papelera ----------
+   «Eliminar» manda el documento a la papelera (se puede restaurar con sus notas).
+   Desde la papelera se puede borrar de forma permanente. */
 async function deleteDoc(d) {
-  if (!confirm(`¿Eliminar «${d.name}» y todas sus notas?`)) return;
-  const marks = await db.marksOf(d.id);
-  for (const m of marks) await db.del('marks', m.id);
+  const doc = await db.get('docs', d.id);
+  if (!doc) return;
+  doc.trashedAt = Date.now();
+  await db.put('docs', doc);
+  await renderLibrary();
+  toast(`«${doc.name}» se ha movido a la papelera`, { label: 'Deshacer', fn: () => restoreDoc(doc, true) });
+}
+async function restoreDoc(d, quiet = false) {
+  const [doc, folders] = await Promise.all([db.get('docs', d.id), db.getAll('folders')]);
+  if (!doc) return;
+  delete doc.trashedAt;
+  const lost = doc.folderId && !folders.some((f) => f.id === doc.folderId);
+  if (lost) doc.folderId = null; // su carpeta ya no existe: vuelve a la Biblioteca
+  await db.put('docs', doc);
+  await renderLibrary();
+  if (!quiet) toast(`«${doc.name}» restaurado en «${folderPath(folders, doc.folderId).map((f) => f.name).join(' › ') || 'Biblioteca'}»`);
+}
+async function purgeDoc(d) {
+  for (const m of await db.marksOf(d.id)) await db.del('marks', m.id);
   await db.del('files', d.id);
   await db.del('docs', d.id);
-  renderLibrary();
+}
+async function purgeOne(d) {
+  if (!confirm(`¿Eliminar «${d.name}» de forma permanente?\n\nSe borrarán el PDF y todas sus notas. No se podrá recuperar.`)) return;
+  await purgeDoc(d);
+  await renderLibrary();
+  toast(`«${d.name}» eliminado definitivamente`);
+}
+async function emptyTrash() {
+  const docs = (await db.getAll('docs')).filter((d) => !live(d));
+  if (!docs.length) return;
+  if (!confirm(`¿Vaciar la papelera?\n\nSe eliminarán de forma permanente ${docs.length} documento${docs.length > 1 ? 's' : ''} con sus notas. No se podrán recuperar.`)) return;
+  busy(true, 'Vaciando la papelera…');
+  try { for (const d of docs) await purgeDoc(d); } finally { busy(false); }
+  await renderLibrary();
+  toast('Papelera vaciada');
+}
+function setTrash(on) { LIB.trash = on; closeMenu(); renderLibrary(); scrollTo(0, 0); }
+const fmtDate = (t) => new Date(t).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+function renderTrash(trashed, folders) {
+  const crumbs = $('#crumbs');
+  const lib = h('button', { class: 'crumb', type: 'button' }, 'Biblioteca');
+  lib.addEventListener('click', () => setTrash(false));
+  crumbs.replaceChildren(lib, svgIcon(ICON.chevron), h('span', { class: 'crumb current' }, 'Papelera'));
+  crumbs.hidden = false;
+  $('#emptyState').hidden = true;
+  $('#folderEmpty').hidden = true;
+  const bar = $('#trashBar');
+  bar.hidden = false;
+  $('#trashInfo').textContent = trashed.length
+    ? 'Los documentos eliminados se guardan aquí con sus notas. Puedes restaurarlos o eliminarlos de forma permanente.'
+    : 'La papelera está vacía.';
+  $('#btnEmptyTrash').hidden = !trashed.length;
+  const grid = $('#docGrid');
+  grid.replaceChildren();
+  trashed.sort((a, b) => b.trashedAt - a.trashedAt);
+  for (const d of trashed) {
+    const from = folderPath(folders, d.folderId || null).map((f) => f.name).join(' › ') || 'Biblioteca';
+    const rest = h('button', { type: 'button', class: 'btn small' }, svgIcon(ICON.restore), 'Restaurar');
+    const del = h('button', { type: 'button', class: 'btn small danger', title: 'Eliminar de forma permanente' }, svgIcon(ICON.trash), 'Eliminar');
+    rest.addEventListener('click', (e) => { e.stopPropagation(); restoreDoc(d); });
+    del.addEventListener('click', (e) => { e.stopPropagation(); purgeOne(d); });
+    grid.append(h('div', { class: 'card trash-card', title: d.name },
+      h('div', { class: 'thumb' }, d.thumb ? h('img', { src: d.thumb, alt: '', draggable: 'false' }) : null),
+      h('div', { class: 'body' },
+        h('div', { class: 'name' }, d.name),
+        h('div', { class: 'meta trash-meta' }, `Eliminado el ${fmtDate(d.trashedAt)} · de «${from}»`),
+        h('div', { class: 'trash-actions' }, rest, del))));
+  }
 }
 
 async function importFiles(fileList) {
+  LIB.trash = false;
   const files = [...fileList].filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
   if (!files.length) { toast('Solo se admiten archivos PDF'); return; }
   for (const [i, f] of files.entries()) {
@@ -2462,6 +2732,9 @@ function init() {
   $('#btnBackup').addEventListener('click', () => $('#backupDialog').showModal());
   $('#btnNewFolder').addEventListener('click', () => createFolder());
   $('#btnMerge').addEventListener('click', () => mergeDialog());
+  $('#btnSplit').addEventListener('click', () => splitDialog());
+  $('#btnTrash').addEventListener('click', () => setTrash(!LIB.trash));
+  $('#btnEmptyTrash').addEventListener('click', emptyTrash);
   $('#btnExportBackup').addEventListener('click', () => { $('#backupDialog').close(); exportBackup(); });
   $('#backupInput').addEventListener('change', (e) => { $('#backupDialog').close(); if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; });
   document.addEventListener('pointerdown', (e) => {
@@ -2503,7 +2776,7 @@ function init() {
 
   renderLibrary().then(() => {
     const m = location.hash.match(/^#doc=(.+)$/);
-    if (m) db.get('docs', m[1]).then((d) => d && openDoc(d.id));
+    if (m) db.get('docs', m[1]).then((d) => d && live(d) && openDoc(d.id));
   });
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
