@@ -145,6 +145,9 @@ function parseBlocks(s) {
         });
         blocks.push({ type: 'list', ordered: env === 'enumerate', desc: env === 'description', items }); i = next; continue;
       }
+      if (env === 'figure' || env === 'figure*') {
+        flush(); blocks.push(parseFigure(inner)); i = next; continue;
+      }
       if (env === 'center' || env === 'quote' || env === 'quotation' || env === 'flushleft' || env === 'flushright') {
         flush(); blocks.push({ type: env === 'quotation' ? 'quote' : env, blocks: parseBlocks(inner) }); i = next; continue;
       }
@@ -158,6 +161,11 @@ function parseBlocks(s) {
       const g = readGroup(s, i + m[0].length);
       const level = { section: 1, subsection: 2, subsubsection: 3, paragraph: 4 }[m[1]];
       blocks.push({ type: 'h', level, inl: parseInline(g[0]) }); i = g[1]; continue;
+    }
+    // imagen suelta: se coloca centrada en su propio bloque
+    if (/^\\includegraphics(?![a-zA-Z])/.test(rest)) {
+      const g = readGraphic(s, i);
+      flush(); blocks.push({ type: 'figure', imgs: [g.img], caption: null }); i = g.next; continue;
     }
     // \noindent, \medskip… se ignoran
     m = /^\\(noindent|smallskip|medskip|bigskip|newpage|clearpage|centering|maketitle)(?![a-zA-Z])\s*/.exec(rest);
@@ -173,6 +181,39 @@ function parseBlocks(s) {
   }
   flush();
   return blocks;
+}
+// \includegraphics[opciones]{nombre} desde la posición i
+function readGraphic(s, i) {
+  let k = skipWs(s, i + '\\includegraphics'.length);
+  if (s[k] === '*') k++;
+  let opts = '';
+  if (s[k] === '[') { const e = s.indexOf(']', k); if (e > 0) { opts = s.slice(k + 1, e); k = e + 1; } }
+  k = skipWs(s, k);
+  const g = readGroup(s, k) || ['', k];
+  return { img: { name: g[0].trim(), opts }, next: g[1] };
+}
+// Contenido de \begin{figure}: imágenes (centradas) y pie de figura
+function parseFigure(inner) {
+  const imgs = [];
+  let caption = null, k = 0;
+  while (k < inner.length) {
+    const r = inner.slice(k);
+    if (/^\\includegraphics(?![a-zA-Z])/.test(r)) { const g = readGraphic(inner, k); imgs.push(g.img); k = g.next; continue; }
+    const cm = /^\\caption\*?\s*(\[[^\]]*\])?\s*/.exec(r);
+    if (cm && inner[k + cm[0].length] === '{') { const g = readGroup(inner, k + cm[0].length); caption = parseInline(g[0].trim()); k = g[1]; continue; }
+    k++;
+  }
+  return { type: 'figure', imgs, caption };
+}
+// Ancho de una imagen como fracción del ancho del texto (15 cm)
+export function figureFrac(opts, fig) {
+  const w = /(?:^|,)\s*width\s*=\s*([\d.]*)\s*\\(textwidth|linewidth|columnwidth|hsize)/.exec(opts || '');
+  if (w) return Math.min(1, Math.max(0.05, w[1] === '' ? 1 : parseFloat(w[1]) || 1));
+  const a = /(?:^|,)\s*width\s*=\s*([\d.]+)\s*(cm|mm|in|pt)/.exec(opts || '');
+  if (a) { const cm = parseFloat(a[1]) * { cm: 1, mm: 0.1, in: 2.54, pt: 0.03515 }[a[2]]; return Math.min(1, Math.max(0.05, cm / 15)); }
+  const sc = /(?:^|,)\s*scale\s*=\s*([\d.]+)/.exec(opts || '');
+  const natural = fig ? fig.w / 567 : 0.8; // 15 cm ≈ 567 px
+  return Math.min(1, Math.max(0.05, (sc ? parseFloat(sc[1]) || 1 : 1) * natural));
 }
 // Divide el contenido de una lista en sus \item (sin entrar en listas anidadas)
 function splitItems(inner) {
@@ -310,7 +351,7 @@ async function mathNode(MJ, tex, display, macros, numbered) {
 }
 
 // Devuelve una lista de elementos (uno por bloque) listos para colocar y paginar
-export async function renderLatex(src) {
+export async function renderLatex(src, figs = {}) {
   const { blocks, macros } = parseLatex(src);
   if (!blocks.length) return [];
   const MJ = await loadMathJax();
@@ -349,6 +390,23 @@ export async function renderLatex(src) {
       case 'p': { const p = el('p', 'tx-p'); p.append(await inl(b.inl)); return p; }
       case 'h': { const hh = el('div', `tx-h tx-h${b.level}`); hh.append(await inl(b.inl)); return hh; }
       case 'math': { const d = el('div', 'tx-display'); d.append(displayNodes.get(b)); return d; }
+      case 'figure': {
+        const f = el('figure', 'tx-figure');
+        for (const im of b.imgs) {
+          const fig = figs[im.name];
+          if (!fig) { const e = el('div', 'tx-figure-missing'); e.textContent = im.name ? `Imagen no encontrada: ${im.name}` : 'Falta el nombre de la imagen'; f.append(e); continue; }
+          const img = el('img');
+          img.src = fig.url; img.alt = im.name; img.width = fig.w; img.height = fig.h;
+          img.style.width = `${(figureFrac(im.opts, fig) * 100).toFixed(1)}%`;
+          f.append(img);
+        }
+        if (b.caption && b.caption.length) {
+          const c = el('figcaption');
+          const lb = el('span', 'tx-b'); lb.textContent = `Figura ${++figNum}: `;
+          c.append(lb, await inl(b.caption)); f.append(c);
+        }
+        return f;
+      }
       case 'list': {
         const l = el(b.ordered ? 'ol' : 'ul', 'tx-list');
         for (const it of b.items) {
@@ -367,6 +425,7 @@ export async function renderLatex(src) {
       }
     }
   };
+  let figNum = 0;
   const out = [];
   for (const b of blocks) out.push(await build(b));
   return out;
@@ -414,7 +473,7 @@ export async function mathToPng(container, fontSizePt, maxWidthPt) {
 }
 
 // Prepara los bloques del comentario para el PDF: [{kind, …}] con fórmulas ya rasterizadas
-export async function latexForPdf(src, fontSizePt, maxWidthPt) {
+export async function latexForPdf(src, fontSizePt, maxWidthPt, figs = {}) {
   const { blocks, macros } = parseLatex(src);
   if (!blocks.length) return [];
   const MJ = await loadMathJax();
@@ -443,6 +502,16 @@ export async function latexForPdf(src, fontSizePt, maxWidthPt) {
       case 'p': return { kind: 'p', inl: await inl(b.inl) };
       case 'h': return { kind: 'h', level: b.level, inl: await inl(b.inl) };
       case 'math': return { kind: 'math', img: disp.get(b) };
+      case 'figure': {
+        const imgs = [];
+        for (const im of b.imgs) {
+          const fig = figs[im.name];
+          if (fig) imgs.push({ url: fig.url, w: fig.w, h: fig.h, frac: figureFrac(im.opts, fig) });
+          else imgs.push({ missing: im.name || '?' });
+        }
+        const cap = b.caption && b.caption.length ? [{ t: 'text', s: `Figura ${++figNum}: `, b: 1 }, ...(await inl(b.caption))] : null;
+        return { kind: 'figure', imgs, caption: cap };
+      }
       case 'list': {
         const items = [];
         for (const it of b.items) { const bl = []; for (const bb of it.blocks) bl.push(await conv(bb)); items.push({ label: it.label, blocks: bl }); }
@@ -454,6 +523,7 @@ export async function latexForPdf(src, fontSizePt, maxWidthPt) {
       }
     }
   };
+  let figNum = 0;
   const out = [];
   for (const b of blocks) out.push(await conv(b));
   return out;

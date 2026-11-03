@@ -287,6 +287,10 @@ dialog p { margin: 0 0 16px; color: var(--muted); }
 .latex .tx-h { font-weight: 700; margin: .25em 0 .4em; }
 .latex .tx-h1 { font-size: 1.2em; } .latex .tx-h2 { font-size: 1.1em; } .latex .tx-h3, .latex .tx-h4 { font-size: 1em; }
 .latex .tx-display { margin: .5em 0; overflow-x: auto; overflow-y: hidden; }
+.latex .tx-figure { margin: .8em 0; padding: 0; text-align: center; }
+.latex .tx-figure img { display: block; margin: 0 auto .35em; max-width: 100%; height: auto; }
+.latex .tx-figure figcaption { font-size: .92em; line-height: 1.4; margin: 0 auto; max-width: 92%; }
+.latex .tx-figure-missing { display: inline-block; margin: .2em auto; padding: .5em .8em; border: 1px dashed #d88; color: #b03a2e; font-size: .9em; border-radius: 6px; }
 .latex mjx-container[jax="SVG"][display="true"] { margin: 0 !important; }
 .latex .tx-list { margin: .2em 0 .6em; padding-left: 1.6em; }
 .latex .tx-list li { margin: .15em 0; }
@@ -321,6 +325,9 @@ body.editing { overflow: hidden; }
 .te-keys { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px calc(8px + var(--safe-bottom)); border-top: 1px solid #e6e3dc; background: #f6f5f2; flex: none; }
 .te-key { border: 1px solid #dcd8cf; background: #fff; color: #1d2330; border-radius: 8px; padding: 5px 9px; font: 13px Menlo, "SF Mono", Consolas, monospace; cursor: pointer; white-space: nowrap; }
 .te-key:hover { background: #eef3fb; border-color: #b9cbe6; }
+.te-key { font: 13.5px -apple-system, system-ui, "Segoe UI", sans-serif; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; }
+.te-key b, .te-key i { font-family: Georgia, "Times New Roman", serif; font-size: 15px; min-width: 14px; text-align: center; }
+.te-key svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .te-preview { background: #e9e6df; color-scheme: light; }
 .te-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 18px 28px; }
 .te-quote { margin: 0 0 10px; }

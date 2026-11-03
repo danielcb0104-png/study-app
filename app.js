@@ -90,6 +90,7 @@ const ICON = {
   move: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M9 13h6M13 10.5l2.5 2.5-2.5 2.5"/>',
   more: '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
+  image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
 /* =========================================================
@@ -892,15 +893,17 @@ const plainToLatex = (t) => (t || '').replace(/([%$&#])/g, '\\$1');
 const commentSource = (m) => (m.fmt === 'latex' ? m.comment || '' : plainToLatex(m.comment));
 // Bloques ya dibujados de cada comentario (caché)
 const commentCache = new Map();
+const figsKey = (m) => Object.entries(m.figs || {}).map(([k, v]) => `${k}:${v.url.length}`).join('|');
 function commentBlocks(m) {
   const src = commentSource(m);
+  const key = `${src}\u0000${figsKey(m)}`;
   const c = commentCache.get(m.id);
-  if (c && c.src === src) return c.promise;
-  const promise = (src.trim() ? renderLatex(src) : Promise.resolve([])).catch((e) => {
+  if (c && c.src === key) return c.promise;
+  const promise = (src.trim() ? renderLatex(src, m.figs || {}) : Promise.resolve([])).catch((e) => {
     console.warn(e);
     return [h('p', { class: 'tx-p' }, m.comment || '')];
   });
-  commentCache.set(m.id, { src, promise });
+  commentCache.set(m.id, { src: key, promise });
   return promise;
 }
 
@@ -1065,11 +1068,62 @@ function latexHint(cm) {
   if (!list.length) return null;
   return { list, from: { line: cur.line, ch: cur.ch - word.length }, to: cur };
 }
+// Botones rápidos del editor: [etiqueta, título, fragmento | acción, ¿bloque propio?]
 const KEYS = [
-  ['$¦$', '$x$'], ['\\[\n¦\n\\]', '\\[ \\]'], ['\\frac{¦}{}', 'a/b'], ['^{¦}', 'xⁿ'], ['_{¦}', 'xₙ'], ['\\sqrt{¦}', '√'],
-  ['\\int_{¦}^{}', '∫'], ['\\sum_{¦}^{}', 'Σ'], ['\\alpha', 'α'], ['\\to', '→'], ['\\textbf{¦}', 'B'], ['\\emph{¦}', 'I'],
-  ['\\begin{align*}\n  ¦ &= \\\\\n\\end{align*}', 'align'], ['\\begin{itemize}\n  \\item ¦\n\\end{itemize}', '• lista'], ['\\\\\n', '↵ \\\\'],
+  [() => h('b', {}, 'B'), 'Negrita: \\textbf{…}', '\\textbf{¦}'],
+  [() => h('i', {}, 'I'), 'Cursiva: \\textit{…}', '\\textit{¦}'],
+  [() => '• Lista', 'Lista de puntos (itemize)', '\\begin{itemize}\n  \\item ¦\n\\end{itemize}', true],
+  [() => '1. Lista', 'Lista numerada (enumerate)', '\\begin{enumerate}\n  \\item ¦\n\\end{enumerate}', true],
+  [() => [svgIcon(ICON.image), ' Figura'], 'Insertar una figura (imagen centrada)', 'figure', true],
+  [() => '\\[ \\] Ecuación', 'Ecuación centrada sin numerar: \\[ … \\]', '\\[\n  ¦\n\\]', true],
 ];
+// Inserta en su propia línea (saltos de línea delante/detrás si hace falta)
+function insertBlock(cm, snippet) {
+  const cur = cm.getCursor();
+  const line = cm.getLine(cur.line);
+  const pre = line.slice(0, cur.ch).trim() ? '\n' : '';
+  const post = line.slice(cur.ch).trim() ? '\n' : '';
+  insertSnippet(cm, pre + snippet + post);
+}
+// Lee una imagen y la reduce (máx. 1600 px); PNG o JPEG para que también vaya al PDF
+async function readFigure(file) {
+  const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('No se pudo leer la imagen')); img.src = url; });
+  const nw = img.naturalWidth || 800, nh = img.naturalHeight || 600;
+  const k = Math.min(1, 1600 / Math.max(nw, nh));
+  const w = Math.max(1, Math.round(nw * k)), hh = Math.max(1, Math.round(nh * k));
+  const c = document.createElement('canvas'); c.width = w; c.height = hh;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, hh);
+  ctx.drawImage(img, 0, 0, w, hh);
+  let out = /png|gif|svg|webp|bmp/.test(file.type) ? c.toDataURL('image/png') : '';
+  if (!out || out.length > 1.6e6) out = c.toDataURL('image/jpeg', 0.9);
+  return { url: out, w, h: hh };
+}
+let figInput = null;
+function pickFigure() {
+  if (!figInput) { figInput = h('input', { type: 'file', accept: 'image/*', hidden: true }); document.body.append(figInput); }
+  figInput.value = '';
+  figInput.onchange = async () => {
+    const file = figInput.files[0];
+    if (!file || !ED?.m) return;
+    const m = ED.m;
+    try {
+      const fig = await readFigure(file);
+      m.figs = m.figs || {};
+      let n = 1; while (Object.keys(m.figs).some((k) => k.startsWith(`figura${n}.`))) n++;
+      const name = `figura${n}.${fig.url.startsWith('data:image/png') ? 'png' : 'jpg'}`;
+      m.figs[name] = fig;
+      const frac = Math.max(0.2, Math.min(0.8, Math.round((fig.w / 567) * 20) / 20));
+      await saveComment(m, true);
+      if (ED.m !== m) return;
+      insertBlock(ED.cm, `\\begin{figure}[h]\n  \\centering\n  \\includegraphics[width=${frac}\\textwidth]{${name}}\n  \\caption{¦}\n\\end{figure}`);
+    } catch (e) { console.warn(e); toast('No se pudo añadir la imagen'); }
+  };
+  figInput.click();
+}
+
 let ED = null; // { root, cm, paper, quote, status, m, renderId, timer }
 async function openEditor(m) {
   hidePopup(); clearSelection();
@@ -1082,10 +1136,20 @@ async function openEditor(m) {
     const codeBox = h('div', { class: 'te-cm' });
     const paper = h('div', { class: 'te-paper latex' });
     const quote = h('div', { class: 'te-quote' });
-    const keys = h('div', { class: 'te-keys' }, KEYS.map(([snip, label]) => {
-      const b = h('button', { class: 'te-key', title: snip.replace('¦', '…') }, label);
+    const keys = h('div', { class: 'te-keys' }, KEYS.map(([label, title, snip, block]) => {
+      const b = h('button', { class: 'te-key', type: 'button', title }, label());
       b.addEventListener('pointerdown', (e) => e.preventDefault());
-      b.addEventListener('click', () => insertSnippet(ED.cm, snip));
+      b.addEventListener('click', () => {
+        if (snip === 'figure') return pickFigure();
+        const cm = ED.cm;
+        // con texto seleccionado, negrita/cursiva lo envuelven
+        if (!block && cm.somethingSelected()) {
+          const sel = cm.getSelection();
+          const [a, z] = snip.split('¦');
+          cm.replaceSelection(a + sel + z); cm.focus(); return;
+        }
+        (block ? insertBlock : insertSnippet)(cm, snip);
+      });
       return b;
     }));
     const root = h('div', { class: 'tex-editor', hidden: true },
@@ -1147,7 +1211,7 @@ async function updatePreview() {
   const id = (ED.renderId = (ED.renderId || 0) + 1);
   const src = ED.cm.getValue();
   let nodes;
-  try { nodes = src.trim() ? await renderLatex(src) : [h('p', { class: 'tx-p placeholder' }, 'Aquí verás el resultado mientras escribes.')]; }
+  try { nodes = src.trim() ? await renderLatex(src, ED.m.figs || {}) : [h('p', { class: 'tx-p placeholder' }, 'Aquí verás el resultado mientras escribes.')]; }
   catch (e) { nodes = [h('p', { class: 'tex-err' }, String(e.message || e))]; }
   if (id !== ED.renderId) return;
   ED.paper.replaceChildren(...nodes);
@@ -1158,6 +1222,8 @@ async function closeEditor() {
   clearTimeout(ED.timer); clearTimeout(ED.saveT);
   m.comment = ED.cm.getValue();
   m.fmt = 'latex';
+  // imágenes que ya no se usan en el comentario
+  if (m.figs) for (const k of Object.keys(m.figs)) if (!m.comment.includes(`{${k}}`)) delete m.figs[k];
   await saveComment(m, true);
   ED.m = null;
   ED.root.hidden = true;
@@ -1793,8 +1859,13 @@ async function exportAnnotated() {
     const fontFor = (it) => (it.tt ? TF.tt : it.b && it.i ? TF.bi : it.b ? TF.b : it.i ? TF.i : TF.r);
     const ink = rgb(0.11, 0.14, 0.19);
     const CSIZE = 11;
+    const embedUrl = (u) => (u.startsWith('data:image/png') ? out.embedPng(u) : out.embedJpg(u));
     const embedRich = async (blocks) => {
       for (const b of blocks) {
+        if (b.kind === 'figure') {
+          for (const im of b.imgs) if (im.url) { try { im.pdfImg = await embedUrl(im.url); } catch (e) { console.warn(e); } }
+          if (b.caption) for (const it of b.caption) if (it.t === 'img') it.pdfImg = await out.embedPng(it.png);
+        }
         if (b.kind === 'math' && b.img) b.pdfImg = await out.embedPng(b.img.png);
         if (b.inl) for (const it of b.inl) if (it.t === 'img') it.pdfImg = await out.embedPng(it.png);
         if (b.items) for (const it of b.items) await embedRich(it.blocks);
@@ -1804,7 +1875,7 @@ async function exportAnnotated() {
     const richOf = async (m, width) => {
       const plain = () => (m.comment || '').split(/\n{2,}/).map((par) => ({ kind: 'p', inl: par.split('\n').flatMap((ln, k) => (k ? [{ t: 'br' }, { t: 'text', s: ln }] : [{ t: 'text', s: ln }])) }));
       if (m.fmt !== 'latex') return plain();
-      try { const r = await latexForPdf(m.comment, CSIZE, width); await embedRich(r); return r; } catch (e) { console.warn(e); return plain(); }
+      try { const r = await latexForPdf(m.comment, CSIZE, width, m.figs || {}); await embedRich(r); return r; } catch (e) { console.warn(e); return plain(); }
     };
 
     for (let i = 0; i < copied.length; i++) {
@@ -1914,6 +1985,20 @@ async function exportAnnotated() {
             ensure(hh + 8); y -= 4;
             np.drawImage(b.pdfImg, { x: x + (width - w) / 2, y: y - hh, width: w, height: hh });
             y -= hh + 4;
+          } else if (b.kind === 'figure') {
+            y -= 6;
+            for (const im of b.imgs) {
+              if (im.pdfImg) {
+                let w = width * im.frac, hh = (w * im.h) / im.w;
+                const maxH = vh - 2 * M - 70;
+                if (hh > maxH) { w *= maxH / hh; hh = maxH; }
+                ensure(hh + 6);
+                np.drawImage(im.pdfImg, { x: x + (width - w) / 2, y: y - hh, width: w, height: hh });
+                y -= hh + 6;
+              } else drawInline([{ t: 'err', s: `Imagen no encontrada: ${im.missing || '?'}` }], x, width, 9.5, 'center');
+            }
+            if (b.caption) drawInline(b.caption, x, width, CSIZE - 1, 'center');
+            y -= 6;
           } else if (b.kind === 'list') {
             b.items.forEach((it, k) => {
               const label = it.label ?? (b.ordered ? `${k + 1}.` : '•');
@@ -1945,7 +2030,7 @@ async function exportAnnotated() {
         // extracto
         if (m.image) {
           try {
-            const img = await out.embedJpg(m.image);
+            const img = await embedUrl(m.image);
             const k = m.imagePpu ? Math.min(maxW / img.width, 1 / m.imagePpu, 260 / img.height) : Math.min((maxW * 0.8) / img.width, 160 / img.height, 1);
             const iw = img.width * k, ih = img.height * k;
             ensure(ih + 8);
