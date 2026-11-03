@@ -149,6 +149,10 @@ const ICON = {
   chevron: '<path d="M9 6l6 6-6 6"/>',
   bullets: '<rect x="2.5" y="4.5" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><rect x="2.5" y="10.2" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><rect x="2.5" y="15.9" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><path d="M9.5 6.3h12M9.5 12h12M9.5 17.7h12"/>',
   numbers: '<g style="fill:var(--ico-accent);stroke:none;font:700 7.8px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.4" y="9.1">1</text><text x="4.4" y="14.8">2</text><text x="4.4" y="20.5">3</text></g><path d="M9.5 6.3h12M9.5 12h12M9.5 17.7h12"/>',
+  merge: '<path d="M6 3v5a4 4 0 004 4h4a4 4 0 014 4v5"/><path d="M18 3v5a4 4 0 01-4 4"/><path d="M15 18l3 3 3-3"/>',
+  arrowUp: '<path d="M12 19V6M6.5 11.5L12 6l5.5 5.5"/>',
+  arrowDown: '<path d="M12 5v13M6.5 12.5L12 18l5.5-5.5"/>',
+  grip: '<circle cx="9" cy="7" r="1.1"/><circle cx="15" cy="7" r="1.1"/><circle cx="9" cy="12" r="1.1"/><circle cx="15" cy="12" r="1.1"/><circle cx="9" cy="17" r="1.1"/><circle cx="15" cy="17" r="1.1"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -280,6 +284,7 @@ async function renderLibrary() {
       e.stopPropagation();
       showMenu(more, [
         { label: 'Mover a carpeta…', icon: ICON.move, fn: () => moveItem({ type: 'doc', id: d.id }) },
+        { label: 'Combinar con otros…', icon: ICON.merge, fn: () => mergeDialog([d.id]) },
         { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameDoc(d) },
         { label: 'Eliminar', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
       ]);
@@ -428,6 +433,153 @@ async function moveItem(item) {
     });
     dlg.showModal();
   });
+}
+
+/* =========================================================
+   COMBINAR DOCUMENTOS (PDF + notas) en uno nuevo
+   ========================================================= */
+async function mergeDialog(preselected = []) {
+  const [docs, folders] = await Promise.all([db.getAll('docs'), db.getAll('folders')]);
+  if (docs.length < 2) { toast('Necesitas al menos dos documentos en la biblioteca'); return; }
+  const where = (d) => folderPath(folders, d.folderId || null).map((f) => f.name).join(' › ') || 'Biblioteca';
+  docs.sort((a, b) => where(a).localeCompare(where(b), 'es') || byName(a, b));
+  const byId = new Map(docs.map((d) => [d.id, d]));
+  let order = preselected.filter((id) => byId.has(id)); // en el orden en que se marcan
+  let step = 1;
+  const content = h('div', { class: 'merge-body' });
+  const title = h('h3');
+  const sub = h('p', { class: 'merge-sub' });
+  const back = h('button', { type: 'button', class: 'btn ghost' });
+  const next = h('button', { type: 'button', class: 'btn primary' });
+  const nameInput = h('input', { type: 'text', class: 'name-input', maxlength: '120' });
+  let nameTouched = false;
+  nameInput.addEventListener('input', () => { nameTouched = true; });
+  const defaultName = () => order.map((id) => byId.get(id).name).join(' + ').slice(0, 110);
+  const dlg = h('dialog', { class: 'merge-dialog' },
+    h('form', { method: 'dialog', onsubmit: (e) => e.preventDefault() }, title, sub, content,
+      h('div', { class: 'dialog-actions' }, back, next)));
+
+  const drawSelect = () => {
+    title.textContent = 'Combinar documentos';
+    sub.textContent = 'Elige los documentos que quieres juntar (dos o más). Sus notas también se copiarán.';
+    const list = h('div', { class: 'folder-list merge-list' });
+    let lastWhere = null;
+    for (const d of docs) {
+      const w = where(d);
+      if (w !== lastWhere) { list.append(h('div', { class: 'merge-group' }, w)); lastWhere = w; }
+      const on = order.includes(d.id);
+      const cb = h('input', { type: 'checkbox' }); cb.checked = on;
+      const row = h('label', { class: `folder-row merge-row${on ? ' is-on' : ''}` }, cb,
+        h('span', {}, d.name), h('span', { class: 'here' }, `${d.pageCount || '?'} pág.`));
+      cb.addEventListener('change', () => {
+        order = cb.checked ? [...order, d.id] : order.filter((x) => x !== d.id);
+        row.classList.toggle('is-on', cb.checked);
+        updateButtons();
+      });
+      list.append(row);
+    }
+    content.replaceChildren(list);
+    back.textContent = 'Cancelar';
+    next.textContent = 'Siguiente';
+    updateButtons();
+  };
+  const drawOrder = () => {
+    title.textContent = '¿En qué orden los combino?';
+    sub.textContent = 'El primero de la lista irá al principio. Usa las flechas o arrastra para cambiar el orden.';
+    const list = h('ol', { class: 'merge-order' });
+    const move = (i, j) => { if (j < 0 || j >= order.length) return; const [x] = order.splice(i, 1); order.splice(j, 0, x); refresh(); };
+    let dragFrom = null;
+    const refresh = () => {
+      if (!nameTouched) nameInput.value = defaultName();
+      list.replaceChildren(...order.map((id, i) => {
+        const d = byId.get(id);
+        const up = h('button', { type: 'button', class: 'icon-btn small', title: 'Subir', 'aria-label': `Subir ${d.name}`, disabled: i === 0 ? 'disabled' : null }, svgIcon(ICON.arrowUp));
+        const down = h('button', { type: 'button', class: 'icon-btn small', title: 'Bajar', 'aria-label': `Bajar ${d.name}`, disabled: i === order.length - 1 ? 'disabled' : null }, svgIcon(ICON.arrowDown));
+        up.addEventListener('click', () => move(i, i - 1));
+        down.addEventListener('click', () => move(i, i + 1));
+        const li = h('li', { class: 'merge-item', draggable: 'true' },
+          h('span', { class: 'grip' }, svgIcon(ICON.grip)), h('span', { class: 'pos' }, String(i + 1)),
+          h('span', { class: 'nm' }, h('b', {}, d.name), h('small', {}, `${d.pageCount || '?'} pág. · ${where(d)}`)), up, down);
+        li.addEventListener('dragstart', (e) => { dragFrom = i; li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); });
+        li.addEventListener('dragend', () => li.classList.remove('dragging'));
+        li.addEventListener('dragover', (e) => { if (dragFrom != null) { e.preventDefault(); li.classList.add('over'); } });
+        li.addEventListener('dragleave', () => li.classList.remove('over'));
+        li.addEventListener('drop', (e) => { e.preventDefault(); li.classList.remove('over'); const f = dragFrom; dragFrom = null; if (f != null && f !== i) move(f, i); });
+        return li;
+      }));
+    };
+    refresh();
+    const pages = order.reduce((a, id) => a + (byId.get(id).pageCount || 0), 0);
+    content.replaceChildren(list,
+      h('label', { class: 'name-label' }, 'Nombre del nuevo documento'), h('div', { class: 'name-row' }, nameInput),
+      h('p', { class: 'merge-note' }, `${pages} páginas en total. Se guardará en «${folderPath(folders, LIB.folderId).map((f) => f.name).join(' › ') || 'Biblioteca'}». Los documentos originales no cambian.`));
+    back.textContent = 'Atrás';
+    next.textContent = 'Crear documento';
+    updateButtons();
+  };
+  const updateButtons = () => {
+    next.disabled = order.length < 2;
+    if (step === 1) next.textContent = order.length >= 2 ? `Siguiente (${order.length})` : 'Siguiente';
+  };
+  back.addEventListener('click', () => { if (step === 2) { step = 1; drawSelect(); } else dlg.close(); });
+  next.addEventListener('click', async () => {
+    if (order.length < 2) return;
+    if (step === 1) { step = 2; drawOrder(); return; }
+    const name = nameInput.value.trim().replace(/\s+/g, ' ') || defaultName();
+    dlg.close();
+    await mergeDocs([...order], name);
+  });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  drawSelect();
+  dlg.showModal();
+}
+
+async function mergeDocs(ids, name) {
+  busy(true, 'Combinando documentos…');
+  try {
+    const { PDFDocument } = await loadPdfLib();
+    const out = await PDFDocument.create();
+    const newId = uid();
+    const marks = [], read = [];
+    let firstLang = null;
+    let offset = 0;
+    for (const [k, id] of ids.entries()) {
+      busy(true, `Combinando documentos… (${k + 1}/${ids.length})`);
+      const [doc, file] = await Promise.all([db.get('docs', id), db.get('files', id)]);
+      if (!doc || !file) throw new Error('Documento no encontrado');
+      const src = await PDFDocument.load(file.data.slice(0), { ignoreEncryption: true });
+      const pages = await out.copyPages(src, src.getPageIndices());
+      pages.forEach((pg) => out.addPage(pg));
+      for (const m of await db.marksOf(id)) {
+        const c = structuredClone(m);
+        c.id = uid(); c.docId = newId; c.page = m.page + offset;
+        marks.push(c);
+      }
+      for (const n of doc.read || []) read.push(n + offset);
+      if (k === 0) firstLang = doc.lang || null;
+      offset += pages.length;
+    }
+    busy(true, 'Guardando el nuevo documento…');
+    const bytes = await out.save();
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const info = await analyzePdf(buf.slice(0));
+    await db.put('files', { id: newId, data: buf });
+    await db.put('docs', {
+      id: newId, name, size: buf.byteLength, addedAt: Date.now(), openedAt: 0,
+      pageCount: info.pageCount, pageChars: info.pageChars, thumb: info.thumb,
+      read: [...new Set(read)].sort((a, b) => a - b), lastPage: 1, zoom: 1, folderId: LIB.folderId,
+      lang: firstLang || info.lang, mergedFrom: ids, // idioma del primer documento
+    });
+    for (const m of marks) await db.put('marks', m);
+    busy(false);
+    await renderLibrary();
+    toast(`Creado «${name}» (${info.pageCount} páginas${marks.length ? `, ${marks.length} marcas` : ''})`);
+  } catch (err) {
+    console.error(err);
+    busy(false);
+    toast(`No se pudieron combinar los documentos${err?.message ? `: ${err.message}` : ''}`);
+  }
 }
 
 /* Menú contextual pequeño */
@@ -2295,6 +2447,7 @@ function init() {
   $('#tagCancel').addEventListener('click', () => { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); });
   $('#btnBackup').addEventListener('click', () => $('#backupDialog').showModal());
   $('#btnNewFolder').addEventListener('click', () => createFolder());
+  $('#btnMerge').addEventListener('click', () => mergeDialog());
   $('#btnExportBackup').addEventListener('click', () => { $('#backupDialog').close(); exportBackup(); });
   $('#backupInput').addEventListener('change', (e) => { $('#backupDialog').close(); if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; });
   document.addEventListener('pointerdown', (e) => {
