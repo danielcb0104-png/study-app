@@ -1,12 +1,12 @@
 // Service worker: guarda la app en caché para usarla sin conexión
-const VERSION = 'study-app-v32';
+const VERSION = 'study-app-v33';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './latex.js', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/pdf-lib.min.js',
   './vendor/mathjax/tex-svg-full.js', './vendor/codemirror/codemirror.js', './vendor/codemirror/codemirror.css',
   './vendor/codemirror/stex.js', './vendor/codemirror/closebrackets.js', './vendor/codemirror/matchbrackets.js',
   './vendor/codemirror/show-hint.js', './vendor/codemirror/show-hint.css',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
+  './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon-maskable-512.png', './icons/favicon-32.png',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
