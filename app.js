@@ -1061,6 +1061,7 @@ async function openDoc(id) {
     setMode('text');
     updateLangButton();
     labelTagRow();
+    resetFind();
     await buildPages();
     updateProgress();
     scrollToPage(doc.lastPage || 1, false);
@@ -1091,6 +1092,192 @@ async function computeCharsInBackground() {
   updateProgress();
 }
 
+/* =========================================================
+   BUSCADOR: resalta una palabra en el PDF, en las notas y en las correcciones
+   (sin distinguir mayúsculas ni tildes). Intro = siguiente, Mayús+Intro = anterior.
+   ========================================================= */
+const FIND = { q: '', hits: [], cur: -1, run: 0, idx: new Map(), timer: null, refreshT: null };
+const normFind = (s) => s.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s/g, ' ');
+const hasHL = () => typeof Highlight !== 'undefined' && !!CSS.highlights;
+function resetFind() {
+  FIND.q = ''; FIND.hits = []; FIND.cur = -1; FIND.run++; FIND.idx = new Map();
+  clearTimeout(FIND.timer); clearTimeout(FIND.refreshT);
+  const inp = $('#findInput'); if (inp) inp.value = '';
+  $('#find')?.classList.remove('has-q'); $('#find')?.closest('.reader-bar')?.classList.remove('finding');
+  const c = $('#findCount'); if (c) { c.textContent = ''; c.classList.remove('none'); }
+  if (hasHL()) { CSS.highlights.delete('find-hit'); CSS.highlights.delete('find-cur'); }
+  for (const p of R.pages) p.findLayer?.replaceChildren();
+}
+// Texto de una página del PDF (normalizado) + a qué letra corresponde cada carácter
+async function findPageIndex(p) {
+  if (FIND.idx.has(p.num)) return FIND.idx.get(p.num);
+  if (!R.glyphs.has(p.num)) R.glyphs.set(p.num, extractGlyphs(p.page).catch(() => emptyGlyphs()));
+  const G = await R.glyphs.get(p.num);
+  let text = ''; const map = [];
+  const push = (ch, gi) => { if (ch === ' ' && (!text || text.endsWith(' '))) return; text += ch; map.push(gi); };
+  G.g.forEach((q, i) => {
+    if (i && (G.nl[i] || G.sp[i])) push(' ', -1);
+    if (q.space) { push(' ', -1); return; }
+    for (const ch of normFind(q.c || '')) push(ch, i);
+  });
+  const r = { G, text, map };
+  FIND.idx.set(p.num, r);
+  return r;
+}
+// Rectángulos (0–1) de las letras [i0..i1] agrupadas por renglón
+function glyphRunRects(G, idxs) {
+  const out = []; let cur = null, last = -1;
+  for (const i of idxs) {
+    const q = G.g[i];
+    if (!cur || G.nl[i] || i !== last + 1 && Math.abs((q.y0 + q.y1) / 2 - (cur[1] + cur[3]) / 2) > (q.y1 - q.y0) * 0.5) { cur = [q.x0, q.y0, q.x1, q.y1]; out.push(cur); }
+    else { cur[0] = Math.min(cur[0], q.x0); cur[1] = Math.min(cur[1], q.y0); cur[2] = Math.max(cur[2], q.x1); cur[3] = Math.max(cur[3], q.y1); }
+    last = i;
+  }
+  return out;
+}
+// Coincidencias dentro de elementos HTML (notas y correcciones) → objetos Range
+function domRanges(root, qn) {
+  const BLOCK = 'p,li,div,figcaption,h1,h2,h3,h4,td,th,blockquote';
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement?.closest('mjx-container, .placeholder, svg, script, style') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  let text = ''; const map = []; let prevBlock = null;
+  const push = (ch, node, off, len) => { if (ch === ' ' && (!text || text.endsWith(' '))) return; text += ch; map.push([node, off, len]); };
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const blk = n.parentElement.closest(BLOCK);
+    if (prevBlock && blk !== prevBlock) push(' ', null, 0, 0);
+    prevBlock = blk;
+    const v = n.nodeValue;
+    let off = 0;
+    for (const cp of v) { for (const ch of normFind(cp)) push(ch, n, off, cp.length); off += cp.length; }
+  }
+  const out = [];
+  for (let i = text.indexOf(qn); i >= 0; i = text.indexOf(qn, i + qn.length)) {
+    let a = i, z = i + qn.length - 1;
+    while (a <= z && !map[a][0]) a++;
+    while (z >= a && !map[z][0]) z--;
+    if (a > z) continue;
+    const r = document.createRange();
+    try { r.setStart(map[a][0], map[a][1]); r.setEnd(map[z][0], map[z][1] + map[z][2]); out.push(r); } catch {}
+  }
+  return out;
+}
+async function runFind(keepCur = false) {
+  const run = ++FIND.run;
+  const raw = $('#findInput').value;
+  const qn = normFind(raw).replace(/ +/g, ' ').trim();
+  const box = $('#find'), cnt = $('#findCount');
+  box.classList.toggle('has-q', !!raw);
+  const prevCur = FIND.cur;
+  if (!qn || (qn.length < 2 && /^[a-z0-9]$/.test(qn))) {
+    FIND.q = ''; FIND.hits = []; FIND.cur = -1;
+    paintFind(); cnt.textContent = qn ? '…' : ''; cnt.classList.remove('none');
+    return;
+  }
+  if (!keepCur || qn !== FIND.q) cnt.textContent = '…';
+  const hits = [];
+  for (const p of R.pages) {
+    const ix = await findPageIndex(p);
+    if (run !== FIND.run) return;
+    // 1) texto del PDF
+    for (let i = ix.text.indexOf(qn); i >= 0; i = ix.text.indexOf(qn, i + qn.length)) {
+      const idxs = [...new Set(ix.map.slice(i, i + qn.length).filter((g) => g >= 0))].sort((a, b) => a - b);
+      if (idxs.length) hits.push({ type: 'pdf', page: p.num, rects: glyphRunRects(ix.G, idxs) });
+    }
+    // 2) correcciones escritas en la página
+    for (const el of p.corrLayer?.querySelectorAll('.corr') || []) for (const r of domRanges(el, qn)) hits.push({ type: 'dom', page: p.num, range: r });
+    // 3) hojas de notas que van detrás
+    for (const el of p.sheetHolder?.querySelectorAll('.note-body') || []) for (const r of domRanges(el, qn)) hits.push({ type: 'dom', page: p.num, range: r });
+  }
+  if (run !== FIND.run) return;
+  const same = keepCur && qn === FIND.q;
+  FIND.q = qn; FIND.hits = hits;
+  if (!hits.length) FIND.cur = -1;
+  else if (same && prevCur >= 0) FIND.cur = Math.min(prevCur, hits.length - 1);
+  else {
+    // primer resultado a partir de la página que se está leyendo
+    const from = R.doc?.lastPage || 1;
+    const k = hits.findIndex((x) => x.page >= from);
+    FIND.cur = k >= 0 ? k : 0;
+  }
+  paintFind();
+  if (!same && FIND.cur >= 0) scrollToHit(FIND.hits[FIND.cur]);
+}
+function paintFind() {
+  const cnt = $('#findCount');
+  const n = FIND.hits.length;
+  if (FIND.q) { cnt.textContent = n ? `${FIND.cur + 1}/${n}` : 'Sin resultados'; cnt.classList.toggle('none', !n); }
+  for (const p of R.pages) p.findLayer?.replaceChildren();
+  const ranges = [];
+  FIND.hits.forEach((hit, k) => {
+    if (hit.type === 'pdf') {
+      const p = R.pages[hit.page - 1];
+      for (const [x0, y0, x1, y1] of hit.rects) {
+        p.findLayer.append(h('div', { class: `find-hit${k === FIND.cur ? ' cur' : ''}`, style: {
+          left: `${x0 * 100}%`, top: `${y0 * 100}%`, width: `${(x1 - x0) * 100}%`, height: `${(y1 - y0) * 100}%` } }));
+      }
+    } else if (k !== FIND.cur) ranges.push(hit.range);
+  });
+  if (hasHL()) {
+    CSS.highlights.set('find-hit', new Highlight(...ranges));
+    const c = FIND.hits[FIND.cur];
+    if (c?.type === 'dom') CSS.highlights.set('find-cur', new Highlight(c.range)); else CSS.highlights.delete('find-cur');
+  }
+}
+function scrollToHit(hit) {
+  if (!hit) return;
+  let top, bottom;
+  if (hit.type === 'pdf') {
+    const r = R.pages[hit.page - 1].el.getBoundingClientRect();
+    top = r.top + hit.rects[0][1] * r.height; bottom = r.top + hit.rects[hit.rects.length - 1][3] * r.height;
+  } else {
+    const r = hit.range.getBoundingClientRect();
+    if (!r.height) { R.pages[hit.page - 1]?.sheetHolder?.scrollIntoView({ block: 'start' }); return; }
+    top = r.top; bottom = r.bottom;
+  }
+  const barH = document.querySelector('#reader .topbar')?.offsetHeight || 60;
+  if (top < barH + 20 || bottom > window.innerHeight - 30) window.scrollBy({ top: (top + bottom) / 2 - (barH + window.innerHeight) / 2, behavior: 'smooth' });
+}
+function findGo(dir) {
+  const n = FIND.hits.length;
+  if (!n) { if ($('#findInput').value) runFind(); return; }
+  FIND.cur = (FIND.cur + dir + n) % n;
+  paintFind();
+  scrollToHit(FIND.hits[FIND.cur]);
+}
+// cuando se vuelven a dibujar notas, correcciones o páginas (zoom), rehacer los resaltados
+function findRefreshSoon() {
+  if (!FIND.q) return;
+  clearTimeout(FIND.refreshT);
+  FIND.refreshT = setTimeout(() => runFind(true), 150);
+}
+function openFind() {
+  $('#find').closest('.reader-bar').classList.add('finding');
+  const inp = $('#findInput');
+  inp.focus(); inp.select();
+  // preparar el texto de todas las páginas mientras se escribe
+  (async () => { for (const p of R.pages) { if (!R.doc) return; await findPageIndex(p); } })();
+}
+function initFind() {
+  const inp = $('#findInput');
+  inp.addEventListener('focus', openFind);
+  inp.addEventListener('input', () => { clearTimeout(FIND.timer); FIND.timer = setTimeout(() => runFind(), 220); });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); clearTimeout(FIND.timer); if (FIND.q !== normFind(inp.value).replace(/ +/g, ' ').trim()) runFind(); else findGo(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); resetFind(); inp.blur(); }
+  });
+  $('#findNext').addEventListener('click', () => findGo(1));
+  $('#findPrev').addEventListener('click', () => findGo(-1));
+  $('#findClose').addEventListener('click', () => { resetFind(); inp.blur(); });
+  $('#btnFind').addEventListener('click', openFind);
+  for (const b of ['#findNext', '#findPrev', '#findClose']) $(b).addEventListener('pointerdown', (e) => e.preventDefault());
+  document.addEventListener('keydown', (e) => {
+    if ($('#reader').hidden || document.body.classList.contains('editing')) return;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); openFind(); }
+    else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g' && FIND.q) { e.preventDefault(); findGo(e.shiftKey ? -1 : 1); }
+  });
+}
+
 async function detectLangInBackground() {
   const pdf = R.pdf, doc = R.doc;
   let sample = '';
@@ -1119,6 +1306,7 @@ function chooseLang(anchor) {
 }
 
 function closeReader(push = true) {
+  resetFind();
   R.observer?.disconnect(); R.visObserver?.disconnect();
   if (R.pdf) { R.pdf.destroy(); }
   R.pdf = null; R.doc = null; R.pages = []; R.bytes = null;
@@ -1165,9 +1353,10 @@ async function buildPages() {
     p.badgeLayer = h('div', { class: 'badge-layer' });
     p.areaLayer = h('div', { class: 'area-layer' });
     p.corrLayer = h('div', { class: 'corr-layer' });
+    p.findLayer = h('div', { class: 'find-layer' });
     p.selLayer = h('div', { class: 'sel-layer' });
     p.handleLayer = h('div', { class: 'handle-layer' });
-    p.el.append(p.canvas, p.markLayer, p.selLayer, p.corrLayer, p.badgeLayer, p.areaLayer, p.handleLayer);
+    p.el.append(p.canvas, p.markLayer, p.findLayer, p.selLayer, p.corrLayer, p.badgeLayer, p.areaLayer, p.handleLayer);
     attachAreaHandlers(p);
     attachTextSelection(p);
 
@@ -1611,6 +1800,7 @@ async function renderSheet(num) {
     frag.append(shell.sheet);
   });
   p.sheetHolder.replaceChildren(frag);
+  findRefreshSoon();
 }
 const saveTimers = new Map();
 function saveComment(m, now = false) {
@@ -1960,6 +2150,7 @@ function drawCorrections(p) {
     p.corrLayer.append(el);
   }
   p.corrLayer.prepend(svg);
+  findRefreshSoon();
 }
 // Cuadro para escribir la corrección, junto al fragmento
 let corrEd = null;
@@ -2971,6 +3162,7 @@ async function importBackup(file) {
    ========================================================= */
 function init() {
   buildTagRow();
+  initFind();
   $('#fileInput').addEventListener('change', (e) => { importFiles(e.target.files); e.target.value = ''; });
   $('#btnBack').addEventListener('click', () => closeReader());
   $('#modeText').addEventListener('click', () => setMode('text'));

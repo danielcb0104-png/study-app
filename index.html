@@ -79,14 +79,25 @@
 <!-- ============ LECTOR ============ -->
 <div id="reader" class="view" hidden>
   <header class="topbar reader-bar">
-    <button class="icon-btn" id="btnBack" title="Biblioteca" aria-label="Volver a la biblioteca">
-      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-    </button>
-    <div class="doc-title">
-      <div id="readerTitle" class="title"></div>
-      <div class="sub"><span id="pageIndicator">–</span> · <span id="progressText">0 % leído</span></div>
+    <div class="rb-left">
+      <button class="icon-btn" id="btnBack" title="Biblioteca" aria-label="Volver a la biblioteca">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="doc-title">
+        <div id="readerTitle" class="title"></div>
+        <div class="sub"><span id="pageIndicator">–</span> · <span id="progressText">0 % leído</span></div>
+      </div>
+    </div>
+    <div class="find" id="find" role="search">
+      <svg viewBox="0 0 24 24" class="find-ico"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input type="search" id="findInput" placeholder="Buscar en el documento y las notas" autocomplete="off" spellcheck="false" aria-label="Buscar en el documento, las notas y las correcciones">
+      <span id="findCount" class="find-count" aria-live="polite"></span>
+      <button class="icon-btn small" id="findPrev" title="Anterior (Mayús+Intro)" aria-label="Resultado anterior"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+      <button class="icon-btn small" id="findNext" title="Siguiente (Intro)" aria-label="Resultado siguiente"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      <button class="icon-btn small" id="findClose" title="Cerrar búsqueda (Esc)" aria-label="Cerrar búsqueda"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="tools">
+      <button class="icon-btn" id="btnFind" title="Buscar (Cmd+F)" aria-label="Buscar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
       <div class="seg" role="group" aria-label="Modo de marcado">
         <button class="seg-btn active" id="modeText" title="Marcar seleccionando texto">
           <svg viewBox="0 0 24 24"><path d="M4 7V5h16v2M12 5v14M9 19h6"/></svg><span class="lbl">Texto</span>
