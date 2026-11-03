@@ -874,6 +874,19 @@ function cropImg(m) {
   return img;
 }
 
+// Imagen del fragmento en el editor: un poco mayor que en la página y nunca diminuta
+function editorImg(m) {
+  const sz = imgSizes.get(m.id);
+  const img = h('img', { class: 'crop', src: m.image, alt: m.text || 'Fragmento marcado' });
+  if (sz && sz.w > 1) {
+    let w = m.imagePpu ? (sz.w / m.imagePpu) * R.scale * 1.3 : sz.w;
+    const minH = 34; // altura mínima legible (px)
+    if ((sz.h * w) / sz.w < minH) w = (minH * sz.w) / sz.h;
+    img.style.width = `${Math.round(w)}px`;
+  }
+  return img;
+}
+
 // Comentarios antiguos (texto normal) → código LaTeX equivalente
 const plainToLatex = (t) => (t || '').replace(/([%$&#])/g, '\\$1');
 const commentSource = (m) => (m.fmt === 'latex' ? m.comment || '' : plainToLatex(m.comment));
@@ -1117,7 +1130,7 @@ async function openEditor(m) {
   ED.title.replaceChildren(h('span', { class: 'num', style: { background: t.color } }, String(idx + 1)),
     h('b', {}, 'Comentario'), h('span', { class: 'te-sub' }, ` · página ${m.page} · ${t.name}`));
   await ensureImageSizes([m]);
-  ED.quote.replaceChildren(m.image ? cropImg(m) : h('blockquote', {}, m.text || ''));
+  ED.quote.replaceChildren(m.image ? editorImg(m) : h('blockquote', {}, m.text || ''));
   ED.quote.style.setProperty('--c', t.color);
   ED.root.hidden = false;
   document.body.classList.add('editing');
