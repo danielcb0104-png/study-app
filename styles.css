@@ -406,3 +406,14 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .folder-list > .folder-row { min-height: 38px; min-width: 0; width: 100%; justify-self: stretch; box-sizing: border-box; }
 .folder-row > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .folder-row .here { flex: none; }
+
+/* Popup de marcado: colores + «Añadir comentario» */
+.tag-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
+.tag-btn.tag-comment { background: color-mix(in srgb, #e8743b 14%, var(--surface)); color: #b5531f; }
+.tag-btn.tag-comment svg { width: 15px; height: 15px; }
+.tag-btn.tag-comment:hover { background: color-mix(in srgb, #e8743b 26%, var(--surface)); }
+.tag-btn.current { box-shadow: inset 0 0 0 2px var(--c); }
+#tagRemove { color: #c0392b; }
+@media (prefers-color-scheme: dark) { .tag-btn.tag-comment { color: #f0a070; } }
+.tag-popup { max-width: calc(100vw - 16px); }
+@media (max-width: 480px) { .tag-sep { display: none; } }

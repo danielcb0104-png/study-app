@@ -9,12 +9,18 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
    Etiquetas / colores
    ========================================================= */
 export const TAGS = [
-  { id: 'imp',  name: 'Importante', color: '#f2b705' },
-  { id: 'def',  name: 'Definición', color: '#3b82d6' },
-  { id: 'duda', name: 'Duda',       color: '#e0483a' },
-  { id: 'idea', name: 'Idea',       color: '#2fa866' },
-  { id: 'ej',   name: 'Ejemplo',    color: '#9056c9' },
+  { id: 'imp',  name: 'Importante',  color: '#f2b705' },
+  { id: 'def',  name: 'Definición',  color: '#3b82d6' },
+  { id: 'obs',  name: 'Observación', color: '#2fa866' },
+  { id: 'ej',   name: 'Ejemplo',     color: '#9056c9' },
+  { id: 'com',  name: 'Comentario',  color: '#e8743b' },
+  // etiquetas de versiones anteriores (solo para marcas antiguas)
+  { id: 'duda', name: 'Duda',        color: '#e0483a', legacy: true },
+  { id: 'idea', name: 'Idea',        color: '#2fa866', legacy: true },
 ];
+const MARK_TAGS = ['imp', 'def', 'obs', 'ej']; // botones de marcado rápido
+// ¿La marca tiene comentario (aparece en la página de notas)? Las antiguas, sí.
+const hasNote = (m) => m.note !== false;
 const tagById = (id) => TAGS.find((t) => t.id === id) || TAGS[0];
 
 /* =========================================================
@@ -154,7 +160,7 @@ async function renderLibrary() {
   if (LIB.folderId && !folders.some((f) => f.id === LIB.folderId)) LIB.folderId = null;
   const cur = LIB.folderId;
   const counts = {};
-  for (const m of allMarks) counts[m.docId] = (counts[m.docId] || 0) + 1;
+  for (const m of allMarks) if (hasNote(m)) counts[m.docId] = (counts[m.docId] || 0) + 1;
   const subfolders = folders.filter((f) => (f.parentId || null) === cur).sort(byName);
   const docs = docsAll.filter((d) => (d.folderId || null) === cur)
     .sort((a, b) => (b.openedAt || b.addedAt) - (a.openedAt || a.addedAt));
@@ -815,12 +821,14 @@ function updateProgress() {
 const marksOfPage = (num) => R.marks
   .filter((m) => m.page === num)
   .sort((a, b) => (a.rects[0][1] - b.rects[0][1]) || (a.rects[0][0] - b.rects[0][0]) || (a.createdAt - b.createdAt));
+const noteMarksOfPage = (num) => marksOfPage(num).filter(hasNote);
 
 function drawMarks(num) {
   const p = R.pages[num - 1];
   p.markLayer.replaceChildren();
   p.badgeLayer.replaceChildren();
-  marksOfPage(num).forEach((m, i) => {
+  let n = 0;
+  marksOfPage(num).forEach((m) => {
     const c = tagById(m.tag).color;
     for (const [x, y, w, hh] of m.rects) {
       const el = h('div', { class: `hl ${m.kind === 'area' ? 'area' : ''}`, 'data-id': m.id, style: {
@@ -830,9 +838,10 @@ function drawMarks(num) {
       el.style.setProperty('--c', c);
       p.markLayer.append(el);
     }
+    if (!hasNote(m)) return; // solo color, sin número
     const [x0, y0] = m.rects[0];
     const b = h('div', { class: 'badge', title: 'Ir a la nota', style: { left: `${x0 * 100}%`, top: `${y0 * 100}%` },
-      onclick: () => focusNote(m.id, false) }, String(i + 1));
+      onclick: () => focusNote(m.id, false) }, String(++n));
     b.style.setProperty('--c', c);
     p.badgeLayer.append(b);
   });
@@ -893,7 +902,7 @@ function noteBlock(m, i, first, blocks, interactive, num) {
   const t = tagById(m.tag);
   let head;
   if (first) {
-    const sel = h('select', { 'aria-label': 'Etiqueta' }, TAGS.map((tg) => h('option', { value: tg.id, selected: tg.id === m.tag }, tg.name)));
+    const sel = h('select', { 'aria-label': 'Etiqueta' }, TAGS.filter((tg) => !tg.legacy || tg.id === m.tag).map((tg) => h('option', { value: tg.id, selected: tg.id === m.tag }, tg.name)));
     const edit = h('button', { class: 'icon-btn small', title: 'Escribir / editar comentario (LaTeX)', 'aria-label': 'Editar comentario' }, svgIcon(ICON.edit));
     const up = h('button', { class: 'icon-btn small', title: 'Ver en la página', 'aria-label': 'Ver en la página' }, svgIcon(ICON.up));
     const del = h('button', { class: 'icon-btn small', title: 'Eliminar nota', 'aria-label': 'Eliminar nota' }, svgIcon(ICON.trash));
@@ -968,7 +977,7 @@ const sheetRenders = new Map(); // nº de página → contador (descarta dibujad
 async function renderSheet(num) {
   const p = R.pages[num - 1];
   if (!p) return;
-  const ms = marksOfPage(num);
+  const ms = noteMarksOfPage(num);
   const ticket = (sheetRenders.get(num) || 0) + 1;
   sheetRenders.set(num, ticket);
   if (!ms.length) { p.sheetHolder.replaceChildren(); return; }
@@ -1101,7 +1110,7 @@ async function openEditor(m) {
   }
   ED.m = m;
   const t = tagById(m.tag);
-  const idx = marksOfPage(m.page).indexOf(m);
+  const idx = noteMarksOfPage(m.page).indexOf(m);
   ED.title.replaceChildren(h('span', { class: 'num', style: { background: t.color } }, String(idx + 1)),
     h('b', {}, 'Comentario'), h('span', { class: 'te-sub' }, ` · página ${m.page} · ${t.name}`));
   await ensureImageSizes([m]);
@@ -1162,20 +1171,42 @@ async function deleteMark(m) {
   drawMarks(m.page); renderSheet(m.page);
 }
 
-async function createMark({ page, kind, rects, text, image, imagePpu, tag, math }) {
-  const m = { id: uid(), docId: R.doc.id, page, kind, rects, text: (text || '').trim(), image: image || null, imagePpu: imagePpu || null, math: !!math, tag, comment: '', createdAt: Date.now() };
+async function createMark({ page, kind, rects, text, image, imagePpu, tag, math, note }) {
+  const m = { id: uid(), docId: R.doc.id, page, kind, rects, text: (text || '').trim(), image: image || null, imagePpu: imagePpu || null, math: !!math, tag, note: !!note, comment: '', createdAt: Date.now() };
   R.marks.push(m);
   await db.put('marks', m);
-  drawMarks(page); renderSheet(page);
-  toast(`Nota añadida tras la página ${page}`, { label: 'Escribir', fn: () => focusNote(m.id) });
+  drawMarks(page);
+  if (m.note) { await renderSheet(page); focusNote(m.id, true); }
   return m;
 }
+// Imagen del fragmento (para la página de notas) cuando tiene matemáticas
+async function captureMathImage(d) {
+  if (d.kind === 'text' && d.math && !d.image) {
+    try { const c = await cropLines(R.pages[d.page - 1], d.rects); d.image = c.url; d.imagePpu = c.ppu; } catch (e) { console.warn(e); }
+  }
+}
+// Convertir una marca de color en marca con comentario
+async function addCommentTo(m) {
+  await captureMathImage(m);
+  m.note = true;
+  await db.put('marks', m);
+  drawMarks(m.page);
+  await renderSheet(m.page);
+  focusNote(m.id, true);
+}
 
-/* ---------- Popup de etiquetas ---------- */
-let pending = null; // { page, kind, rects, text, image }
+/* ---------- Popup al marcar ----------
+   Colores (Importante, Definición, Observación, Ejemplo): solo marcan el texto.
+   «Añadir comentario»: marca y abre la página de notas para escribir.
+   Al pulsar una marca de color ya hecha, el mismo popup permite cambiar el
+   color, añadirle un comentario o quitarla. */
+let pending = null; // selección nueva {page, kind, rects, text, …} o {edit: marca}
 function showPopup(x, y, data) {
   pending = data;
   const pop = $('#tagPopup');
+  const editing = !!data.edit;
+  $('#tagRemove').hidden = !editing;
+  pop.querySelectorAll('.tag-btn[data-tag]').forEach((b) => b.classList.toggle('current', editing && b.dataset.tag === data.edit.tag));
   pop.hidden = false;
   const pw = pop.offsetWidth, ph = pop.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -1187,24 +1218,45 @@ function showPopup(x, y, data) {
 function hidePopup() { $('#tagPopup').hidden = true; pending = null; }
 function buildTagRow() {
   const row = $('#tagRow');
-  row.replaceChildren(...TAGS.map((t) => {
-    const b = h('button', { class: 'tag-btn', title: t.name }, h('i'), t.name);
+  const take = () => { const d = pending; hidePopup(); clearSelection(); $('.draft-rect')?.remove(); return d; };
+  const tagBtns = MARK_TAGS.map((id) => {
+    const t = tagById(id);
+    const b = h('button', { class: 'tag-btn', title: `Marcar como «${t.name}»`, 'data-tag': id }, h('i'), t.name);
     b.style.setProperty('--c', t.color);
-    // pointerdown + preventDefault para no perder la selección de texto
+    // pointerdown + preventDefault para no perder la selección
     b.addEventListener('pointerdown', (e) => e.preventDefault());
     b.addEventListener('click', async () => {
       if (!pending) return;
-      const data = pending; hidePopup();
-      clearSelection();
-      $('.draft-rect')?.remove();
-      // Con notación matemática se guarda la imagen del fragmento (el texto extraído del PDF sale desordenado)
-      if (data.kind === 'text' && data.math) {
-        try { const c = await cropLines(R.pages[data.page - 1], data.rects); data.image = c.url; data.imagePpu = c.ppu; } catch (e) { console.warn(e); }
+      const d = take();
+      if (d.edit) { // cambiar el color de una marca existente
+        const m = d.edit;
+        if (m.tag !== id) { m.tag = id; await db.put('marks', m); drawMarks(m.page); if (hasNote(m)) renderSheet(m.page); }
+        return;
       }
-      await createMark({ ...data, tag: t.id });
+      await createMark({ ...d, tag: id, note: false });
     });
     return b;
-  }));
+  });
+  const com = h('button', { class: 'tag-btn tag-comment', title: 'Marcar y escribir un comentario en la página de notas' }, svgIcon(ICON.edit), 'Añadir comentario');
+  com.addEventListener('pointerdown', (e) => e.preventDefault());
+  com.addEventListener('click', async () => {
+    if (!pending) return;
+    const d = take();
+    if (d.edit) { await addCommentTo(d.edit); return; }
+    await captureMathImage(d);
+    await createMark({ ...d, tag: 'com', note: true });
+  });
+  row.replaceChildren(...tagBtns, h('span', { class: 'tag-sep' }), com);
+  $('#tagRemove').addEventListener('pointerdown', (e) => e.preventDefault());
+  $('#tagRemove').addEventListener('click', async () => {
+    const d = pending; hidePopup();
+    if (!d?.edit) return;
+    const m = d.edit;
+    await db.del('marks', m.id);
+    R.marks = R.marks.filter((x) => x.id !== m.id);
+    drawMarks(m.page);
+    toast('Marca quitada');
+  });
 }
 
 /* ---------- Selección de texto letra a letra ----------
@@ -1490,7 +1542,9 @@ function attachTextSelection(p) {
     if (e.detail > 1 || (S && S.a !== S.b)) return;
     const [u, v] = uv(e.clientX, e.clientY);
     const hit = marksOfPage(p.num).find((m) => m.rects.some(([x, y, w, hh]) => u >= x && u <= x + w && v >= y && v <= y + hh));
-    if (hit) focusNote(hit.id, false);
+    if (!hit) return;
+    if (hasNote(hit)) focusNote(hit.id, false);
+    else showPopup(e.clientX, e.clientY, { edit: hit });
   });
   el.addEventListener('dblclick', (e) => {
     if (R.mode !== 'text' || e.target.closest('.badge, .sel-handle')) return;
@@ -1751,7 +1805,8 @@ async function exportAnnotated() {
           default: return [cb.x + u * cb.width, cb.y + (1 - v) * cb.height];
         }
       };
-      ms.forEach((m, idx) => {
+      let nIdx = 0;
+      ms.forEach((m) => {
         const color = toRgb(tagById(m.tag).color);
         for (const [x, y, w, hh] of m.rects) {
           const [ax, ay] = map(x, y), [bx, by] = map(x + w, y + hh);
@@ -1759,13 +1814,16 @@ async function exportAnnotated() {
           if (m.kind === 'area') page.drawRectangle({ x: rx, y: ry, width: rw, height: rh, borderColor: color, borderWidth: 1.5, color, opacity: 0.12, borderOpacity: 0.9 });
           else page.drawRectangle({ x: rx, y: ry, width: rw, height: rh, color, opacity: 0.38, blendMode: BlendMode.Multiply });
         }
+        if (!hasNote(m)) return; // marca solo de color: sin número
         const [bx0, by0] = map(m.rects[0][0], m.rects[0][1]);
         page.drawCircle({ x: bx0, y: by0, size: 6.5, color });
-        const label = String(idx + 1);
+        const label = String(++nIdx);
         page.drawText(label, { x: bx0 - bold.widthOfTextAtSize(label, 7.5) / 2, y: by0 - 2.7, size: 7.5, font: bold, color: rgb(1, 1, 1) });
       });
 
-      // 2) Páginas de notas detrás
+      // 2) Páginas de notas detrás (solo si hay marcas con comentario)
+      const nms = ms.filter(hasNote);
+      if (!nms.length) continue;
       const vw = rot % 180 ? cb.height : cb.width, vh = rot % 180 ? cb.width : cb.height;
       const M = Math.max(36, Math.min(56, vw * 0.08));
       const maxW = vw - M * 2 - 12;
@@ -1855,7 +1913,7 @@ async function exportAnnotated() {
         }
       };
 
-      for (const [idx, m] of ms.entries()) {
+      for (const [idx, m] of nms.entries()) {
         const tag = tagById(m.tag); const color = toRgb(tag.color);
         ensure(40);
         const blockTop = y;
