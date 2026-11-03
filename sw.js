@@ -1,5 +1,5 @@
 // Service worker: guarda la app en caché para usarla sin conexión
-const VERSION = 'study-app-v33';
+const VERSION = 'study-app-v34';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './latex.js', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/pdf-lib.min.js',
