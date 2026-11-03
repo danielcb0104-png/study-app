@@ -982,7 +982,7 @@ async function renderSheet(num) {
   if (!ms.length) { p.sheetHolder.replaceChildren(); return; }
   // comentarios antiguos sin imagen del extracto: crearla ahora
   for (const m of ms) {
-    if (m.kind === 'text' && !m.image && R.pages[m.page - 1]) { await captureMathImage(m); if (m.image) await db.put('marks', m); }
+    if (m.kind === 'text' && (!m.image || m.cropV !== CROP_V) && R.pages[m.page - 1]) { await captureMathImage(m); if (m.cropV === CROP_V) await db.put('marks', m); }
   }
   await ensureImageSizes(ms);
   const blocksById = new Map();
@@ -1175,7 +1175,7 @@ async function deleteMark(m) {
 }
 
 async function createMark({ page, kind, rects, text, image, imagePpu, tag, math, note }) {
-  const m = { id: uid(), docId: R.doc.id, page, kind, rects, text: (text || '').trim(), image: image || null, imagePpu: imagePpu || null, math: !!math, tag, note: !!note, comment: '', createdAt: Date.now() };
+  const m = { id: uid(), docId: R.doc.id, page, kind, rects, text: (text || '').trim(), image: image || null, imagePpu: imagePpu || null, cropV: image && kind === 'text' ? CROP_V : undefined, math: !!math, tag, note: !!note, comment: '', createdAt: Date.now() };
   R.marks.push(m);
   await db.put('marks', m);
   drawMarks(page);
@@ -1185,9 +1185,10 @@ async function createMark({ page, kind, rects, text, image, imagePpu, tag, math,
 // Imagen del fragmento (para la página de notas) cuando tiene matemáticas
 // El extracto de los comentarios se guarda como imagen de lo seleccionado: el texto que
 // extrae el PDF a veces sale mal (símbolos como μ, fórmulas, fuentes especiales).
+const CROP_V = 2; // versión del recorte (las imágenes de versiones anteriores se rehacen)
 async function captureMathImage(d) {
-  if (d.kind === 'text' && !d.image) {
-    try { const c = await cropLines(R.pages[d.page - 1], d.rects); d.image = c.url; d.imagePpu = c.ppu; } catch (e) { console.warn(e); }
+  if (d.kind === 'text' && (!d.image || d.cropV !== CROP_V)) {
+    try { const c = await cropLines(R.pages[d.page - 1], d.rects); d.image = c.url; d.imagePpu = c.ppu; d.cropV = CROP_V; imgSizes.delete(d.id); } catch (e) { console.warn(e); }
   }
 }
 // Convertir una marca de color en marca con comentario
@@ -1661,26 +1662,25 @@ function trimToLine(c, coreTopF, coreBotF) {
   return out;
 }
 // Recorte de cada renglón seleccionado, apilados (para fragmentos con matemáticas)
+// Recorte exacto de la zona resaltada al seleccionar (un trozo por renglón, apilados)
 async function cropLines(p, rects) {
   const parts = [];
   for (const [x, y, w, hh] of rects) {
-    const padY = hh * 0.45, padX = hh * 0.12 * (p.h / p.w);
-    const r = [Math.max(0, x - padX), Math.max(0, y - padY), 0, 0];
-    r[2] = Math.min(1, x + w + padX) - r[0]; r[3] = Math.min(1, y + hh + padY) - r[1];
-    const c = await cropCanvas(p, r, 2400);
-    parts.push(trimToLine(c, (y - r[1]) / r[3], (y + hh - r[1]) / r[3]));
+    const r = [Math.max(0, x), Math.max(0, y), 0, 0];
+    r[2] = Math.min(1, x + w) - r[0]; r[3] = Math.min(1, y + hh) - r[1];
+    parts.push(await cropCanvas(p, r, 2400));
   }
-  const gap = 6;
+  const gap = Math.round(parts[0].height * 0.25);
   const W = Math.max(...parts.map((c) => c.width));
   const H = parts.reduce((a, c) => a + c.height, 0) + gap * (parts.length - 1);
   const out = document.createElement('canvas');
-  const k = Math.min(1, 1600 / W, 1600 / H);
+  const k = Math.min(1, 1600 / W, 2400 / H);
   out.width = Math.round(W * k); out.height = Math.round(H * k);
   const ctx = out.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, out.width, out.height);
   let yy = 0;
   for (const c of parts) { ctx.drawImage(c, 0, yy * k, c.width * k, c.height * k); yy += c.height + gap; }
-  return { url: out.toDataURL('image/jpeg', 0.9), ppu: parts[0].ppu * k };
+  return { url: out.toDataURL('image/png'), ppu: parts[0].ppu * k };
 }
 function textInArea(p, [x, y, w, hh]) {
   const { g } = glyphsOf(p);
