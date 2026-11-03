@@ -351,7 +351,7 @@ async function mathNode(MJ, tex, display, macros, numbered) {
 }
 
 // Devuelve una lista de elementos (uno por bloque) listos para colocar y paginar
-export async function renderLatex(src, figs = {}) {
+export async function renderLatex(src, figs = {}, figLabel = 'Figura') {
   const { blocks, macros } = parseLatex(src);
   if (!blocks.length) return [];
   const MJ = await loadMathJax();
@@ -402,7 +402,7 @@ export async function renderLatex(src, figs = {}) {
         }
         if (b.caption && b.caption.length) {
           const c = el('figcaption');
-          const lb = el('span', 'tx-b'); lb.textContent = `Figura ${++figNum}: `;
+          const lb = el('span', 'tx-b'); lb.textContent = `${figLabel} ${++figNum}: `;
           c.append(lb, await inl(b.caption)); f.append(c);
         }
         return f;
@@ -473,7 +473,7 @@ export async function mathToPng(container, fontSizePt, maxWidthPt) {
 }
 
 // Prepara los bloques del comentario para el PDF: [{kind, …}] con fórmulas ya rasterizadas
-export async function latexForPdf(src, fontSizePt, maxWidthPt, figs = {}) {
+export async function latexForPdf(src, fontSizePt, maxWidthPt, figs = {}, figLabel = 'Figura') {
   const { blocks, macros } = parseLatex(src);
   if (!blocks.length) return [];
   const MJ = await loadMathJax();
@@ -509,7 +509,7 @@ export async function latexForPdf(src, fontSizePt, maxWidthPt, figs = {}) {
           if (fig) imgs.push({ url: fig.url, w: fig.w, h: fig.h, frac: figureFrac(im.opts, fig) });
           else imgs.push({ missing: im.name || '?' });
         }
-        const cap = b.caption && b.caption.length ? [{ t: 'text', s: `Figura ${++figNum}: `, b: 1 }, ...(await inl(b.caption))] : null;
+        const cap = b.caption && b.caption.length ? [{ t: 'text', s: `${figLabel} ${++figNum}: `, b: 1 }, ...(await inl(b.caption))] : null;
         return { kind: 'figure', imgs, caption: cap };
       }
       case 'list': {

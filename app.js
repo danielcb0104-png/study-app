@@ -23,6 +23,63 @@ const MARK_TAGS = ['imp', 'def', 'obs', 'ej']; // botones de marcado rápido
 const hasNote = (m) => m.note !== false;
 const tagById = (id) => TAGS.find((t) => t.id === id) || TAGS[0];
 
+/* ---------- Idioma del documento (páginas de notas, editor y marcado) ---------- */
+const LANGS = [['es', 'Castellano'], ['ca', 'Català'], ['en', 'English']];
+const I18N = {
+  es: {
+    notes: 'Notas', page: 'página', sheetOf: (k, n) => `hoja ${k} de ${n}`, cont: 'continuación', contShort: 'cont.',
+    code: 'Código LaTeX', result: 'Resultado', done: 'Listo', saving: 'Guardando…', saved: 'Guardado', comment: 'Comentario',
+    figure: 'Figura', equation: 'Ecuación', bullets: 'Lista de puntos (itemize)', numbered: 'Lista numerada (enumerate)',
+    bold: 'Negrita', italic: 'Cursiva', figTip: 'Insertar una figura (imagen centrada)', eqTip: 'Ecuación sin numerar',
+    placeholder: 'Pulsa aquí para escribir tu comentario (admite LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
+    previewPh: 'Aquí verás el resultado mientras escribes.', addComment: 'Añadir comentario',
+    addCommentTip: 'Marcar y escribir un comentario en la página de notas', markAs: (n) => `Marcar como «${n}»`,
+    editTip: 'Escribir / editar comentario (LaTeX)', upTip: 'Ver en la página', delTip: 'Eliminar nota', bodyTip: 'Pulsa para editar (LaTeX)',
+    tags: { imp: 'Importante', def: 'Definición', obs: 'Observación', ej: 'Ejemplo', com: 'Comentario', duda: 'Duda', idea: 'Idea' },
+  },
+  ca: {
+    notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
+    code: 'Codi LaTeX', result: 'Resultat', done: 'Fet', saving: 'Desant…', saved: 'Desat', comment: 'Comentari',
+    figure: 'Figura', equation: 'Equació', bullets: 'Llista de punts (itemize)', numbered: 'Llista numerada (enumerate)',
+    bold: 'Negreta', italic: 'Cursiva', figTip: 'Inserir una figura (imatge centrada)', eqTip: 'Equació sense numerar',
+    placeholder: 'Fes clic aquí per escriure el teu comentari (admet LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
+    previewPh: 'Aquí veuràs el resultat mentre escrius.', addComment: 'Afegeix un comentari',
+    addCommentTip: 'Marcar i escriure un comentari a la pàgina de notes', markAs: (n) => `Marcar com a «${n}»`,
+    editTip: 'Escriure / editar el comentari (LaTeX)', upTip: 'Veure a la pàgina', delTip: 'Eliminar la nota', bodyTip: 'Fes clic per editar (LaTeX)',
+    tags: { imp: 'Important', def: 'Definició', obs: 'Observació', ej: 'Exemple', com: 'Comentari', duda: 'Dubte', idea: 'Idea' },
+  },
+  en: {
+    notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
+    code: 'LaTeX code', result: 'Result', done: 'Done', saving: 'Saving…', saved: 'Saved', comment: 'Comment',
+    figure: 'Figure', equation: 'Equation', bullets: 'Bulleted list (itemize)', numbered: 'Numbered list (enumerate)',
+    bold: 'Bold', italic: 'Italic', figTip: 'Insert a figure (centred image)', eqTip: 'Unnumbered equation',
+    placeholder: 'Click here to write your comment (LaTeX supported: $x^2$, \\[ … \\], \\textbf{…})',
+    previewPh: 'The result will appear here as you type.', addComment: 'Add comment',
+    addCommentTip: 'Mark and write a comment on the notes page', markAs: (n) => `Mark as “${n}”`,
+    editTip: 'Write / edit comment (LaTeX)', upTip: 'Show on the page', delTip: 'Delete note', bodyTip: 'Click to edit (LaTeX)',
+    tags: { imp: 'Important', def: 'Definition', obs: 'Remark', ej: 'Example', com: 'Comment', duda: 'Question', idea: 'Idea' },
+  },
+};
+const docLang = () => (I18N[R.doc?.lang] ? R.doc.lang : 'es');
+const T = (k) => I18N[docLang()][k];
+const tagName = (t) => I18N[docLang()].tags[t.id] || t.name;
+// Detecta castellano / catalán / inglés por las palabras más frecuentes de cada idioma
+function detectLang(text) {
+  const words = (text || '').toLowerCase().match(/[a-zà-öø-ÿ·]+/g) || [];
+  const SW = {
+    es: 'los las y por con para más su sus son pero también lo como muy este esta estos entre sobre cuando donde puede hay ya fue sin desde todo',
+    ca: 'els les i per amb més seu seva són però també com molt aquest aquesta aquests entre sobre quan on pot hi ja va sense des tot pel dels als una',
+    en: 'the of and to in is that for it with as are on be this by an which or from at we can its these there',
+  };
+  const sets = Object.fromEntries(Object.entries(SW).map(([k, v]) => [k, new Set(v.split(' '))]));
+  const score = { es: 0, ca: 0, en: 0 };
+  for (const w of words) for (const k of Object.keys(sets)) if (sets[k].has(w)) score[k]++;
+  score.ca += ((text || '').match(/\b[ldsn]['’][a-zà-ÿ]/gi) || []).length + ((text || '').match(/l·l|ç|ny/gi) || []).length * 0.3;
+  score.es += ((text || '').match(/ñ|ción\b|ción/gi) || []).length * 0.5;
+  const best = Object.entries(score).sort((a, b) => b[1] - a[1])[0];
+  return best[1] > 3 ? best[0] : 'es';
+}
+
 /* =========================================================
    Base de datos (IndexedDB)
    ========================================================= */
@@ -441,7 +498,7 @@ async function importFiles(fileList) {
       await db.put('docs', {
         id, name: f.name.replace(/\.pdf$/i, ''), size: f.size, addedAt: Date.now(), openedAt: 0,
         pageCount: info.pageCount, pageChars: info.pageChars, thumb: info.thumb,
-        read: [], lastPage: 1, zoom: 1, folderId: LIB.folderId,
+        read: [], lastPage: 1, zoom: 1, folderId: LIB.folderId, lang: info.lang,
       });
     } catch (err) {
       console.error(err);
@@ -457,10 +514,11 @@ async function importFiles(fileList) {
 async function analyzePdf(buf) {
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   const pageChars = [];
-  let thumb = null;
+  let thumb = null, sample = '';
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const tc = await page.getTextContent();
+    if (sample.length < 30000) sample += ` ${tc.items.map((it) => it.str || '').join(' ')}`;
     pageChars.push(tc.items.reduce((a, it) => a + (it.str ? it.str.replace(/\s+/g, '').length : 0), 0));
     if (i === 1) {
       const vp = page.getViewport({ scale: 1 });
@@ -475,7 +533,7 @@ async function analyzePdf(buf) {
   }
   const pageCount = pdf.numPages;
   await pdf.destroy();
-  return { pageCount, pageChars, thumb };
+  return { pageCount, pageChars, thumb, lang: detectLang(sample) };
 }
 
 /* =========================================================
@@ -505,12 +563,15 @@ async function openDoc(id) {
     $('#readerTitle').textContent = doc.name;
     document.title = `${doc.name} · Study App`;
     setMode('text');
+    updateLangButton();
+    labelTagRow();
     await buildPages();
     updateProgress();
     scrollToPage(doc.lastPage || 1, false);
     history.pushState({ doc: id }, '', `#doc=${id}`);
     // Si el documento se importó antes de tener recuento de texto, calcularlo ahora
     if (!doc.pageChars || doc.pageChars.length !== R.pdf.numPages) computeCharsInBackground();
+    if (!doc.lang) detectLangInBackground();
   } catch (err) {
     console.error(err);
     toast('No se pudo abrir el documento');
@@ -532,6 +593,33 @@ async function computeCharsInBackground() {
   doc.pageChars = chars; doc.pageCount = pdf.numPages;
   await db.put('docs', doc);
   updateProgress();
+}
+
+async function detectLangInBackground() {
+  const pdf = R.pdf, doc = R.doc;
+  let sample = '';
+  for (let i = 1; i <= Math.min(pdf.numPages, 8) && sample.length < 30000; i++) {
+    if (R.pdf !== pdf) return;
+    const tc = await (await pdf.getPage(i)).getTextContent();
+    sample += ` ${tc.items.map((it) => it.str || '').join(' ')}`;
+  }
+  if (R.doc !== doc || doc.lang) return;
+  await setDocLang(detectLang(sample));
+}
+function updateLangButton() {
+  const b = $('#btnLang');
+  if (b) { b.textContent = docLang().toUpperCase(); b.title = `Idioma del documento: ${LANGS.find(([k]) => k === docLang())[1]} (notas y editor)`; }
+}
+async function setDocLang(l) {
+  if (!R.doc) return;
+  R.doc.lang = l;
+  await db.put('docs', R.doc);
+  updateLangButton();
+  labelTagRow();
+  for (const p of R.pages) if (noteMarksOfPage(p.num).length) renderSheet(p.num);
+}
+function chooseLang(anchor) {
+  showMenu(anchor, LANGS.map(([k, name]) => ({ icon: k === docLang() ? ICON.check : '', label: name, fn: () => { if (k !== docLang()) setDocLang(k); } })));
 }
 
 function closeReader(push = true) {
@@ -898,10 +986,10 @@ const commentCache = new Map();
 const figsKey = (m) => Object.entries(m.figs || {}).map(([k, v]) => `${k}:${v.url.length}`).join('|');
 function commentBlocks(m) {
   const src = commentSource(m);
-  const key = `${src}\u0000${figsKey(m)}`;
+  const key = `${src}\u0000${figsKey(m)}\u0000${docLang()}`;
   const c = commentCache.get(m.id);
   if (c && c.src === key) return c.promise;
-  const promise = (src.trim() ? renderLatex(src, m.figs || {}) : Promise.resolve([])).catch((e) => {
+  const promise = (src.trim() ? renderLatex(src, m.figs || {}, T('figure')) : Promise.resolve([])).catch((e) => {
     console.warn(e);
     return [h('p', { class: 'tx-p' }, m.comment || '')];
   });
@@ -910,7 +998,7 @@ function commentBlocks(m) {
 }
 
 function sheetShell(num, W, H) {
-  const title = h('h3', {}, `Notas · página ${num}`);
+  const title = h('h3', {}, `${T('notes')} · ${T('page')} ${num}`);
   const body = h('div', { class: 'sheet-body' });
   const sheet = h('section', { class: 'sheet', 'data-page': num, style: { width: `${W}px`, height: `${H}px` } }, title, body);
   return { sheet, title, body };
@@ -920,10 +1008,10 @@ function noteBlock(m, i, first, blocks, interactive, num) {
   const t = tagById(m.tag);
   let head;
   if (first) {
-    const sel = h('span', { class: 'tag-label' }, t.name); // el tipo de la nota no se cambia desde aquí
-    const edit = h('button', { class: 'icon-btn small', title: 'Escribir / editar comentario (LaTeX)', 'aria-label': 'Editar comentario' }, svgIcon(ICON.edit));
-    const up = h('button', { class: 'icon-btn small', title: 'Ver en la página', 'aria-label': 'Ver en la página' }, svgIcon(ICON.up));
-    const del = h('button', { class: 'icon-btn small', title: 'Eliminar nota', 'aria-label': 'Eliminar nota' }, svgIcon(ICON.trash));
+    const sel = h('span', { class: 'tag-label' }, tagName(t)); // el tipo de la nota no se cambia desde aquí
+    const edit = h('button', { class: 'icon-btn small', title: T('editTip'), 'aria-label': T('editTip') }, svgIcon(ICON.edit));
+    const up = h('button', { class: 'icon-btn small', title: T('upTip'), 'aria-label': T('upTip') }, svgIcon(ICON.up));
+    const del = h('button', { class: 'icon-btn small', title: T('delTip'), 'aria-label': T('delTip') }, svgIcon(ICON.trash));
     if (interactive) {
       edit.addEventListener('click', () => openEditor(m));
       up.addEventListener('click', () => focusMark(m.id));
@@ -931,11 +1019,11 @@ function noteBlock(m, i, first, blocks, interactive, num) {
     }
     head = h('div', { class: 'note-head' }, h('span', { class: 'num' }, String(i + 1)), sel, h('span', { class: 'spacer' }), edit, up, del);
   } else {
-    head = h('div', { class: 'note-head cont' }, h('span', { class: 'num' }, String(i + 1)), h('span', { class: 'cont-label' }, `${t.name} · continuación`));
+    head = h('div', { class: 'note-head cont' }, h('span', { class: 'num' }, String(i + 1)), h('span', { class: 'cont-label' }, `${tagName(t)} · ${T('cont')}`));
   }
   const empty = first && !(m.comment || '').trim();
-  const body = h('div', { class: `note-body latex${empty ? ' empty' : ''}`, title: interactive ? 'Pulsa para editar (LaTeX)' : null },
-    empty ? h('span', { class: 'placeholder' }, 'Pulsa aquí para escribir tu comentario (admite LaTeX: $x^2$, \\[ … \\], \\textbf{…})') : blocks.map((b) => b.cloneNode(true)));
+  const body = h('div', { class: `note-body latex${empty ? ' empty' : ''}`, title: interactive ? T('bodyTip') : null },
+    empty ? h('span', { class: 'placeholder' }, T('placeholder')) : blocks.map((b) => b.cloneNode(true)));
   if (interactive) body.addEventListener('click', (e) => { if (!e.target.closest('a')) openEditor(m); });
   const note = h('article', { class: `note${first ? '' : ' cont'}`, 'data-id': m.id },
     head,
@@ -1012,7 +1100,7 @@ async function renderSheet(num) {
   const frag = document.createDocumentFragment();
   plan.forEach((sh, k) => {
     const shell = sheetShell(num, W, H);
-    if (plan.length > 1) shell.title.textContent = `Notas · página ${num} · hoja ${k + 1} de ${plan.length}`;
+    if (plan.length > 1) shell.title.textContent = `${T('notes')} · ${T('page')} ${num} · ${T('sheetOf')(k + 1, plan.length)}`;
     for (const sg of sh) shell.body.append(noteBlock(byId.get(sg.id), sg.i, sg.first, (blocksById.get(sg.id) || []).slice(sg.from, sg.to), true, num));
     frag.append(shell.sheet);
   });
@@ -1072,12 +1160,12 @@ function latexHint(cm) {
 }
 // Botones rápidos del editor: [etiqueta, título, fragmento | acción, ¿bloque propio?]
 const KEYS = [
-  [() => h('b', {}, 'B'), 'Negrita: \\textbf{…}', '\\textbf{¦}'],
-  [() => h('i', {}, 'I'), 'Cursiva: \\textit{…}', '\\textit{¦}'],
-  [() => svgIcon(ICON.bullets), 'Lista de puntos (itemize)', '\\begin{itemize}\n  \\item ¦\n\\end{itemize}', true],
-  [() => svgIcon(ICON.numbers), 'Lista numerada (enumerate)', '\\begin{enumerate}\n  \\item ¦\n\\end{enumerate}', true],
-  [() => [svgIcon(ICON.image), ' Figura'], 'Insertar una figura (imagen centrada)', 'figure', true],
-  [() => 'Ecuación', 'Ecuación sin numerar: \\begin{equation*} … \\end{equation*}', '\\begin{equation*}\n  ¦\n\\end{equation*}', true],
+  [() => h('b', {}, 'B'), () => `${T('bold')}: \\textbf{…}`, '\\textbf{¦}'],
+  [() => h('i', {}, 'I'), () => `${T('italic')}: \\textit{…}`, '\\textit{¦}'],
+  [() => svgIcon(ICON.bullets), () => T('bullets'), '\\begin{itemize}\n  \\item ¦\n\\end{itemize}', true],
+  [() => svgIcon(ICON.numbers), () => T('numbered'), '\\begin{enumerate}\n  \\item ¦\n\\end{enumerate}', true],
+  [() => [svgIcon(ICON.image), ` ${T('figure')}`], () => T('figTip'), 'figure', true],
+  [() => T('equation'), () => `${T('eqTip')}: \\begin{equation*} … \\end{equation*}`, '\\begin{equation*}\n  ¦\n\\end{equation*}', true],
 ];
 // Inserta en su propia línea (saltos de línea delante/detrás si hace falta)
 function insertBlock(cm, snippet) {
@@ -1133,13 +1221,14 @@ async function openEditor(m) {
   loadMathJax().catch(() => {});
   if (!ED) {
     const status = h('span', { class: 'te-status' }, '');
-    const done = h('button', { class: 'btn primary' }, 'Listo');
+    const done = h('button', { class: 'btn primary' }, T('done'));
     const title = h('div', { class: 'te-title' });
     const codeBox = h('div', { class: 'te-cm' });
     const paper = h('div', { class: 'te-paper latex' });
     const quote = h('div', { class: 'te-quote' });
-    const keys = h('div', { class: 'te-keys' }, KEYS.map(([label, title, snip, block]) => {
-      const b = h('button', { class: 'te-key', type: 'button', title }, label());
+    const keys = h('div', { class: 'te-keys' });
+    const fillKeys = () => keys.replaceChildren(...KEYS.map(([label, title, snip, block]) => {
+      const b = h('button', { class: 'te-key', type: 'button', title: title() }, label());
       b.addEventListener('pointerdown', (e) => e.preventDefault());
       b.addEventListener('click', () => {
         if (snip === 'figure') return pickFigure();
@@ -1154,12 +1243,13 @@ async function openEditor(m) {
       });
       return b;
     }));
+    const codeLabel = h('div', { class: 'te-label' }), resultLabel = h('div', { class: 'te-label' });
     const root = h('div', { class: 'tex-editor', hidden: true },
       h('div', { class: 'te-panel', role: 'dialog', 'aria-label': 'Editor de comentario LaTeX' },
         h('header', { class: 'te-bar' }, title, h('span', { class: 'spacer' }), status, done),
         h('div', { class: 'te-main' },
-          h('section', { class: 'te-code' }, h('div', { class: 'te-label' }, 'Código LaTeX'), codeBox, keys),
-          h('section', { class: 'te-preview' }, h('div', { class: 'te-label' }, 'Resultado'), h('div', { class: 'te-scroll' }, quote, paper)),
+          h('section', { class: 'te-code' }, codeLabel, codeBox, keys),
+          h('section', { class: 'te-preview' }, resultLabel, h('div', { class: 'te-scroll' }, quote, paper)),
         )));
     document.body.append(root);
     const cm = CM(codeBox, {
@@ -1180,21 +1270,22 @@ async function openEditor(m) {
     cm.on('change', () => {
       if (!ED.m) return;
       ED.m.comment = cm.getValue(); ED.m.fmt = 'latex';
-      ED.status.textContent = 'Guardando…';
+      ED.status.textContent = T('saving');
       clearTimeout(ED.saveT);
-      ED.saveT = setTimeout(async () => { await saveComment(ED.m, true); if (ED?.m) ED.status.textContent = 'Guardado'; }, 500);
+      ED.saveT = setTimeout(async () => { await saveComment(ED.m, true); if (ED?.m) ED.status.textContent = T('saved'); }, 500);
       clearTimeout(ED.timer);
       ED.timer = setTimeout(updatePreview, 220);
     });
     done.addEventListener('click', () => closeEditor());
     root.addEventListener('pointerdown', (e) => { if (e.target === root) closeEditor(); });
-    ED = { root, cm, paper, quote, status, title };
+    ED = { root, cm, paper, quote, status, title, relabel: () => { fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); } };
   }
   ED.m = m;
+  ED.relabel();
   const t = tagById(m.tag);
   const idx = noteMarksOfPage(m.page).indexOf(m);
   ED.title.replaceChildren(h('span', { class: 'num', style: { background: t.color } }, String(idx + 1)),
-    h('b', {}, 'Comentario'), h('span', { class: 'te-sub' }, ` · página ${m.page} · ${t.name}`));
+    h('b', {}, T('comment')), h('span', { class: 'te-sub' }, ` · ${T('page')} ${m.page} · ${tagName(t)}`));
   await ensureImageSizes([m]);
   ED.quote.replaceChildren(m.image ? editorImg(m) : h('blockquote', {}, m.text || ''));
   ED.quote.style.setProperty('--c', t.color);
@@ -1213,7 +1304,7 @@ async function updatePreview() {
   const id = (ED.renderId = (ED.renderId || 0) + 1);
   const src = ED.cm.getValue();
   let nodes;
-  try { nodes = src.trim() ? await renderLatex(src, ED.m.figs || {}) : [h('p', { class: 'tx-p placeholder' }, 'Aquí verás el resultado mientras escribes.')]; }
+  try { nodes = src.trim() ? await renderLatex(src, ED.m.figs || {}, T('figure')) : [h('p', { class: 'tx-p placeholder' }, T('previewPh'))]; }
   catch (e) { nodes = [h('p', { class: 'tex-err' }, String(e.message || e))]; }
   if (id !== ED.renderId) return;
   ED.paper.replaceChildren(...nodes);
@@ -1303,12 +1394,21 @@ function showPopup(x, y, data) {
   pop.style.left = `${left}px`; pop.style.top = `${top}px`;
 }
 function hidePopup() { $('#tagPopup').hidden = true; pending = null; }
+// Textos del popup de marcado en el idioma del documento
+function labelTagRow() {
+  document.querySelectorAll('#tagRow .tag-btn[data-tag]').forEach((b) => {
+    const n = tagName(tagById(b.dataset.tag));
+    b.querySelector('.tag-name').textContent = n; b.title = T('markAs')(n);
+  });
+  const com = document.querySelector('#tagRow .tag-comment');
+  if (com) { com.querySelector('.tag-name').textContent = T('addComment'); com.title = T('addCommentTip'); }
+}
 function buildTagRow() {
   const row = $('#tagRow');
   const take = () => { const d = pending; hidePopup(); clearSelection(); $('.draft-rect')?.remove(); return d; };
   const tagBtns = MARK_TAGS.map((id) => {
     const t = tagById(id);
-    const b = h('button', { class: 'tag-btn', title: `Marcar como «${t.name}»`, 'data-tag': id }, h('i'), t.name);
+    const b = h('button', { class: 'tag-btn', 'data-tag': id }, h('i'), h('span', { class: 'tag-name' }));
     b.style.setProperty('--c', t.color);
     // pointerdown + preventDefault para no perder la selección
     b.addEventListener('pointerdown', (e) => e.preventDefault());
@@ -1324,7 +1424,7 @@ function buildTagRow() {
     });
     return b;
   });
-  const com = h('button', { class: 'tag-btn tag-comment', title: 'Marcar y escribir un comentario en la página de notas' }, svgIcon(ICON.edit), 'Añadir comentario');
+  const com = h('button', { class: 'tag-btn tag-comment' }, svgIcon(ICON.edit), h('span', { class: 'tag-name' }));
   com.addEventListener('pointerdown', (e) => e.preventDefault());
   com.addEventListener('click', async () => {
     if (!pending) return;
@@ -1334,6 +1434,7 @@ function buildTagRow() {
     await createMark({ ...d, tag: 'com', note: true });
   });
   row.replaceChildren(...tagBtns, h('span', { class: 'tag-sep' }), com);
+  labelTagRow();
   $('#tagRemove').addEventListener('pointerdown', (e) => e.preventDefault());
   $('#tagRemove').addEventListener('click', async () => {
     const d = pending; hidePopup();
@@ -1877,7 +1978,7 @@ async function exportAnnotated() {
     const richOf = async (m, width) => {
       const plain = () => (m.comment || '').split(/\n{2,}/).map((par) => ({ kind: 'p', inl: par.split('\n').flatMap((ln, k) => (k ? [{ t: 'br' }, { t: 'text', s: ln }] : [{ t: 'text', s: ln }])) }));
       if (m.fmt !== 'latex') return plain();
-      try { const r = await latexForPdf(m.comment, CSIZE, width, m.figs || {}); await embedRich(r); return r; } catch (e) { console.warn(e); return plain(); }
+      try { const r = await latexForPdf(m.comment, CSIZE, width, m.figs || {}, T('figure')); await embedRich(r); return r; } catch (e) { console.warn(e); return plain(); }
     };
 
     for (let i = 0; i < copied.length; i++) {
@@ -1923,7 +2024,7 @@ async function exportAnnotated() {
         np = out.addPage([vw, vh]);
         np.drawRectangle({ x: 0, y: 0, width: vw, height: vh, color: rgb(1, 0.996, 0.976) });
         y = vh - M;
-        np.drawText(clean(`Notas · página ${num}${cont ? ' (cont.)' : ''}`), { x: M, y: y - 12, size: 13, font: bold, color: rgb(0.54, 0.5, 0.42) });
+        np.drawText(clean(`${T('notes')} · ${T('page')} ${num}${cont ? ` (${T('contShort')})` : ''}`), { x: M, y: y - 12, size: 13, font: bold, color: rgb(0.54, 0.5, 0.42) });
         np.drawText(clean(R.doc.name).slice(0, 90), { x: M, y: y - 26, size: 8, font, color: rgb(0.6, 0.6, 0.6) });
         y -= 46;
       };
@@ -2026,7 +2127,7 @@ async function exportAnnotated() {
         np.drawCircle({ x: M + 9, y: y - 6, size: 8, color });
         const lab = String(idx + 1);
         np.drawText(lab, { x: M + 9 - bold.widthOfTextAtSize(lab, 9) / 2, y: y - 9.2, size: 9, font: bold, color: rgb(1, 1, 1) });
-        np.drawText(clean(tag.name), { x: M + 24, y: y - 10, size: 10.5, font: bold, color });
+        np.drawText(clean(tagName(tag)), { x: M + 24, y: y - 10, size: 10.5, font: bold, color });
         y -= 24;
         const startPage = np;
         // extracto
@@ -2190,6 +2291,7 @@ function init() {
   $('#zoomIn').addEventListener('click', () => setZoom((R.doc?.zoom || 1) + 0.25));
   $('#zoomOut').addEventListener('click', () => setZoom((R.doc?.zoom || 1) - 0.25));
   $('#btnExport').addEventListener('click', exportAnnotated);
+  $('#btnLang').addEventListener('click', (e) => chooseLang(e.currentTarget));
   $('#tagCancel').addEventListener('click', () => { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); });
   $('#btnBackup').addEventListener('click', () => $('#backupDialog').showModal());
   $('#btnNewFolder').addEventListener('click', () => createFolder());
