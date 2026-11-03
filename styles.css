@@ -135,7 +135,7 @@ svg:not(mjx-container svg) { width: 20px; height: 20px; fill: none; stroke: curr
   overflow: hidden;
 }
 .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.page .mark-layer, .page .badge-layer, .page .area-layer, .page .sel-layer { position: absolute; inset: 0; }
+.page .mark-layer, .page .badge-layer, .page .area-layer, .page .sel-layer, .page .corr-layer { position: absolute; inset: 0; }
 .page .sel-layer { z-index: 1; pointer-events: none; }
 .sel-layer .sel { position: absolute; background: rgba(0, 100, 255, .26); border-radius: 2px; }
 .page { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -486,3 +486,21 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .trash-actions .btn { height: 32px; padding: 0 10px; font-size: 13px; gap: 5px; }
 .trash-actions .btn svg { width: 16px; height: 16px; }
 @media (max-width: 420px) { .trash-actions .btn { flex: 1; justify-content: center; padding: 0 6px; } .actions { gap: 4px; } .actions .btn { padding: 0 8px; } }
+
+/* Correcciones (marca «Corregir») */
+.page .corr-layer { z-index: 3; pointer-events: none; }
+.corr-layer .corr-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.corr-layer .corr-lines line { stroke: #e3261c; stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .8; }
+.corr-layer .corr { position: absolute; box-sizing: border-box; padding: 0 .27em; white-space: pre; line-height: 1.25; overflow: visible;
+  font-family: Helvetica, Arial, sans-serif; color: #e3261c; background: rgba(255,255,255,.88); border: 1px solid rgba(227,38,28,.45); border-radius: 2px;
+  pointer-events: auto; cursor: pointer; }
+.corr-layer .corr:hover { background: #fff; box-shadow: 0 0 0 2px rgba(227,38,28,.25); }
+.corr-editor { position: fixed; z-index: 60; width: min(340px, calc(100vw - 16px)); background: var(--surface); border: 1px solid #e3261c; border-radius: 12px; padding: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.25); }
+.corr-input { width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px; border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; font: 15px/1.35 Helvetica, Arial, sans-serif; color: #c81e15; background: var(--surface-2); outline: none; }
+.corr-input:focus { border-color: #e3261c; }
+.corr-ed-bar { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.corr-ed-bar small { color: var(--muted); font-size: 11.5px; }
+.corr-ed-bar .spacer { flex: 1; }
+.btn.small { min-height: 32px; padding: 0 12px; font-size: 13.5px; }
+.hl.corr-hover { outline: 2px solid #e3261c; outline-offset: 1px; }
+.corr-layer .corr.hover { background: #fff; box-shadow: 0 0 0 2px rgba(227,38,28,.3); }

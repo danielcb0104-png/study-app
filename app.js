@@ -14,11 +14,12 @@ export const TAGS = [
   { id: 'obs',  name: 'Observación', color: '#2fa866' },
   { id: 'ej',   name: 'Ejemplo',     color: '#9056c9' },
   { id: 'com',  name: 'Comentario',  color: '#e8743b' },
+  { id: 'cor',  name: 'Corregir',    color: '#e3261c' }, // marca en rojo + corrección escrita al lado
   // etiquetas de versiones anteriores (solo para marcas antiguas)
   { id: 'duda', name: 'Duda',        color: '#e0483a', legacy: true },
   { id: 'idea', name: 'Idea',        color: '#2fa866', legacy: true },
 ];
-const MARK_TAGS = ['imp', 'def', 'obs', 'ej']; // botones de marcado rápido
+const MARK_TAGS = ['imp', 'def', 'obs', 'ej', 'cor']; // botones de marcado rápido
 // ¿La marca tiene comentario (aparece en la página de notas)? Las antiguas, sí.
 const hasNote = (m) => m.note !== false;
 const tagById = (id) => TAGS.find((t) => t.id === id) || TAGS[0];
@@ -35,7 +36,8 @@ const I18N = {
     previewPh: 'Aquí verás el resultado mientras escribes.', addComment: 'Añadir comentario',
     addCommentTip: 'Marcar y escribir un comentario en la página de notas', markAs: (n) => `Marcar como «${n}»`,
     editTip: 'Escribir / editar comentario (LaTeX)', upTip: 'Ver en la página', delTip: 'Eliminar nota', bodyTip: 'Pulsa para editar (LaTeX)',
-    tags: { imp: 'Importante', def: 'Definición', obs: 'Observación', ej: 'Ejemplo', com: 'Comentario', duda: 'Duda', idea: 'Idea' },
+    tags: { imp: 'Importante', def: 'Definición', obs: 'Observación', ej: 'Ejemplo', com: 'Comentario', cor: 'Corregir', duda: 'Duda', idea: 'Idea' },
+    corrPh: 'Escribe la corrección…', corrHint: 'Intro: guardar · Mayús+Intro: nueva línea', save: 'Guardar', removeMark: 'Quitar la marca', corrTip: 'Pulsa para editar la corrección',
   },
   ca: {
     notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
@@ -46,7 +48,8 @@ const I18N = {
     previewPh: 'Aquí veuràs el resultat mentre escrius.', addComment: 'Afegeix un comentari',
     addCommentTip: 'Marcar i escriure un comentari a la pàgina de notes', markAs: (n) => `Marcar com a «${n}»`,
     editTip: 'Escriure / editar el comentari (LaTeX)', upTip: 'Veure a la pàgina', delTip: 'Eliminar la nota', bodyTip: 'Fes clic per editar (LaTeX)',
-    tags: { imp: 'Important', def: 'Definició', obs: 'Observació', ej: 'Exemple', com: 'Comentari', duda: 'Dubte', idea: 'Idea' },
+    tags: { imp: 'Important', def: 'Definició', obs: 'Observació', ej: 'Exemple', com: 'Comentari', cor: 'Corregir', duda: 'Dubte', idea: 'Idea' },
+    corrPh: 'Escriu la correcció…', corrHint: 'Retorn: desar · Maj+Retorn: línia nova', save: 'Desa', removeMark: 'Treure la marca', corrTip: 'Fes clic per editar la correcció',
   },
   en: {
     notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
@@ -57,7 +60,8 @@ const I18N = {
     previewPh: 'The result will appear here as you type.', addComment: 'Add comment',
     addCommentTip: 'Mark and write a comment on the notes page', markAs: (n) => `Mark as “${n}”`,
     editTip: 'Write / edit comment (LaTeX)', upTip: 'Show on the page', delTip: 'Delete note', bodyTip: 'Click to edit (LaTeX)',
-    tags: { imp: 'Important', def: 'Definition', obs: 'Remark', ej: 'Example', com: 'Comment', duda: 'Question', idea: 'Idea' },
+    tags: { imp: 'Important', def: 'Definition', obs: 'Remark', ej: 'Example', com: 'Comment', cor: 'Correct', duda: 'Question', idea: 'Idea' },
+    corrPh: 'Type the correction…', corrHint: 'Enter: save · Shift+Enter: new line', save: 'Save', removeMark: 'Remove mark', corrTip: 'Click to edit the correction',
   },
 };
 const docLang = () => (I18N[R.doc?.lang] ? R.doc.lang : 'es');
@@ -1104,9 +1108,10 @@ async function buildPages() {
     p.markLayer = h('div', { class: 'mark-layer' });
     p.badgeLayer = h('div', { class: 'badge-layer' });
     p.areaLayer = h('div', { class: 'area-layer' });
+    p.corrLayer = h('div', { class: 'corr-layer' });
     p.selLayer = h('div', { class: 'sel-layer' });
     p.handleLayer = h('div', { class: 'handle-layer' });
-    p.el.append(p.canvas, p.markLayer, p.selLayer, p.badgeLayer, p.areaLayer, p.handleLayer);
+    p.el.append(p.canvas, p.markLayer, p.selLayer, p.corrLayer, p.badgeLayer, p.areaLayer, p.handleLayer);
     attachAreaHandlers(p);
     attachTextSelection(p);
 
@@ -1169,6 +1174,7 @@ async function renderPage(p) {
     // Posición exacta de cada carácter (para seleccionar letra a letra)
     if (!R.glyphs.has(p.num)) R.glyphs.set(p.num, extractGlyphs(p.page).catch((e) => { console.warn('glyphs', e); return emptyGlyphs(); }));
     p.glyphs = await R.glyphs.get(p.num);
+    upgradeCorrections(p);
     if (p.token !== token) return;
     p.rendered = true;
   } catch (err) {
@@ -1372,6 +1378,7 @@ function drawMarks(num) {
     b.style.setProperty('--c', c);
     p.badgeLayer.append(b);
   });
+  drawCorrections(p);
 }
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
@@ -1782,6 +1789,169 @@ async function deleteMark(m) {
   drawMarks(m.page); renderSheet(m.page);
 }
 
+/* ---------- Correcciones ----------
+   La marca «Corregir» pinta el fragmento en rojo y escribe la corrección al lado.
+   La posición se elige entre varios huecos (a la derecha, encima, debajo, márgenes)
+   buscando el que no tape texto de la página y quede más cerca del fragmento.
+   Se guarda en coordenadas de la página (0–1) para que no cambie con el zoom. */
+const CORR_FONT = 'Helvetica, Arial, sans-serif';
+let corrCtx = null;
+const corrWidthPt = (s, size) => { corrCtx ||= document.createElement('canvas').getContext('2d'); corrCtx.font = `${size}px ${CORR_FONT}`; return corrCtx.measureText(s).width; };
+function wrapCorr(text, size, maxPt) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const w of words) {
+      const t = line ? `${line} ${w}` : w;
+      if (line && corrWidthPt(t, size) > maxPt) { out.push(line); line = w; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+const corrMarksOfPage = (num) => R.marks.filter((m) => m.page === num && m.tag === 'cor' && m.corr?.text);
+// v2: siempre en el margen (así nunca tapa texto ni figuras del PDF)
+const CORR_V = 2;
+function placeCorrection(p, m, text) {
+  const PW = p.w, PH = p.h;
+  const rects = m.rects, F = rects[0], L = rects[rects.length - 1];
+  const glyphs = (glyphsOf(p).g || []).filter((q) => !q.space && q.x1 > q.x0);
+  // borde del bloque de texto (percentiles: ignora números de línea o de página sueltos)
+  const pct = (arr, k) => { if (!arr.length) return null; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.floor(a.length * k)))]; };
+  const textL = Math.min(pct(glyphs.map((q) => q.x0), 0.02) ?? 0.12, ...rects.map((r) => r[0]));
+  const textR = Math.max(pct(glyphs.map((q) => q.x1), 0.98) ?? 0.88, ...rects.map((r) => r[0] + r[2]));
+  const gap = 0.008, edge = 0.008;
+  const sides = [
+    { side: 'r', x0: textR + gap, w: 1 - edge - (textR + gap), from: [textR + 0.002, L[1] + L[3] / 2] },
+    { side: 'l', x0: edge, w: textL - gap - edge, from: [textL - 0.002, F[1] + F[3] / 2] },
+  ];
+  // margen más cercano al fragmento (si tiene sitio); si no, el más ancho
+  const fragMid = ((F[0] + L[0] + L[2]) / 2);
+  sides.forEach((sd) => { sd.pref = (sd.side === 'r' ? textR - fragMid : fragMid - textL) + (sd.w * PW < 40 ? 1 : 0); });
+  sides.sort((a, b) => a.pref - b.pref);
+  const obstacles = glyphs.map((q) => [q.x0, q.y0, q.x1, q.y1]);
+  for (const o of corrMarksOfPage(p.num)) if (o.id !== m.id && o.corr?.v === CORR_V) obstacles.push([o.corr.x, o.corr.y, o.corr.x + o.corr.w, o.corr.y + o.corr.h]);
+  const overlap = (b) => {
+    let a = 0;
+    const x0 = b.x - 0.0015, y0 = b.y - 0.001, x1 = b.x + b.w + 0.0015, y1 = b.y + b.h + 0.001;
+    for (const o of obstacles) { const ix = Math.min(x1, o[2]) - Math.max(x0, o[0]), iy = Math.min(y1, o[3]) - Math.max(y0, o[1]); if (ix > 0 && iy > 0) a += ix * iy; }
+    return a;
+  };
+  let best = null, bestScore = Infinity;
+  sides.forEach((sd, si) => {
+    const wPt = Math.max(18, sd.w * PW);
+    // letra según el sitio: normal 0,8 × renglón (7–10 pt); más pequeña si el margen es estrecho
+    let fsPt = Math.min(10, Math.max(7, L[3] * PH * 0.8));
+    if (wPt < 60) fsPt = Math.max(5.5, fsPt * Math.max(0.6, wPt / 60));
+    const lineV = (fsPt * 1.25) / PH, padU = 3 / PW, padV = 1.5 / PH;
+    const lines = wrapCorr(text, fsPt, Math.max(12, wPt - 6));
+    const w = Math.min(sd.w, Math.max(1, ...lines.map((l) => corrWidthPt(l, fsPt))) / PW + padU * 2);
+    const h = lines.length * lineV + padV * 2;
+    const x = sd.side === 'r' ? sd.x0 : textL - gap - w; // pegada al texto
+    const yc = sd.from[1];
+    for (let k = 0; k <= 80; k++) {
+      const off = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * lineV * 0.5;
+      const y = Math.min(0.992 - h, Math.max(0.008, yc - h / 2 + off));
+      const b = { x: Math.max(0.002, x), y, w, h, fs: fsPt / PH, lines };
+      const ov = overlap(b);
+      const score = (ov > 0 ? 10 + ov * 2e4 : 0) + Math.abs(y + h / 2 - yc) * 3 + si * 0.15;
+      if (score < bestScore) { bestScore = score; best = { ...b, from: sd.from, side: sd.side }; }
+      if (ov === 0 && k > 2 && Math.abs(off) > h) break;
+    }
+  });
+  const near = [best.side === 'r' ? best.x : best.x + best.w, Math.min(Math.max(best.from[1], best.y), best.y + best.h)];
+  return { v: CORR_V, text, x: best.x, y: best.y, w: best.w, h: best.h, fs: best.fs, lines: best.lines, leader: [best.from[0], best.from[1], near[0], near[1]] };
+}
+// Correcciones guardadas con la versión anterior (dentro del texto): pasarlas al margen
+async function upgradeCorrections(p) {
+  const old = corrMarksOfPage(p.num).filter((m) => m.corr.v !== CORR_V);
+  if (!old.length || !p.glyphs) return;
+  for (const m of old) { m.corr = placeCorrection(p, m, m.corr.text); await db.put('marks', m); }
+  drawMarks(p.num);
+}
+function drawCorrections(p) {
+  if (!p.corrLayer) return;
+  p.corrLayer.replaceChildren();
+  const H = parseFloat(p.el.style.height) || p.el.offsetHeight;
+  const ms = corrMarksOfPage(p.num);
+  if (!ms.length) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 1 1'); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('class', 'corr-lines');
+  for (const m of ms) {
+    const c = m.corr;
+    if (c.leader) {
+      const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      ln.setAttribute('x1', c.leader[0]); ln.setAttribute('y1', c.leader[1]); ln.setAttribute('x2', c.leader[2]); ln.setAttribute('y2', c.leader[3]);
+      svg.append(ln);
+    }
+    const el = h('div', { class: 'corr', 'data-id': m.id, title: T('corrTip'), style: {
+      left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${c.h * 100}%`, fontSize: `${c.fs * H}px`,
+    } }, c.lines.join('\n'));
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    el.addEventListener('click', (e) => { e.stopPropagation(); openCorrEditor(m); });
+    // al pasar por encima se resalta su fragmento (útil si hay varias en el mismo renglón)
+    const link = (on) => { p.markLayer.querySelectorAll(`.hl[data-id="${m.id}"]`).forEach((x) => x.classList.toggle('corr-hover', on)); el.classList.toggle('hover', on); };
+    el.addEventListener('pointerenter', () => link(true));
+    el.addEventListener('pointerleave', () => link(false));
+    p.corrLayer.append(el);
+  }
+  p.corrLayer.prepend(svg);
+}
+// Cuadro para escribir la corrección, junto al fragmento
+let corrEd = null;
+function closeCorrEditor(save = true) {
+  if (!corrEd) return;
+  const { el, m, ta } = corrEd;
+  corrEd = null;
+  el.remove();
+  if (save) saveCorrection(m, ta.value);
+}
+async function saveCorrection(m, text) {
+  text = (text || '').replace(/\s+$/g, '').replace(/^\s+/g, '');
+  const p = R.pages[m.page - 1];
+  if (!p || !R.marks.includes(m)) return;
+  m.corr = text ? placeCorrection(p, m, text) : null;
+  await db.put('marks', m);
+  drawMarks(m.page);
+}
+function openCorrEditor(m) {
+  closeCorrEditor(true);
+  hidePopup(); clearSelection();
+  const p = R.pages[m.page - 1];
+  if (!p) return;
+  const ta = h('textarea', { class: 'corr-input', rows: '2', placeholder: T('corrPh'), spellcheck: 'true' });
+  ta.value = m.corr?.text || '';
+  const save = h('button', { type: 'button', class: 'btn primary small' }, T('save'));
+  const del = h('button', { type: 'button', class: 'icon-btn small', title: T('removeMark'), 'aria-label': T('removeMark') }, svgIcon(ICON.trash));
+  const el = h('div', { class: 'corr-editor', role: 'dialog' }, ta, h('div', { class: 'corr-ed-bar' }, h('small', {}, T('corrHint')), h('span', { class: 'spacer' }), del, save));
+  document.body.append(el);
+  // posición: justo debajo (o encima) del final del fragmento
+  const r = p.el.getBoundingClientRect();
+  const L = m.rects[m.rects.length - 1];
+  const ax = r.left + (L[0] + L[2]) * r.width, ay = r.top + (L[1] + L[3]) * r.height;
+  const ew = el.offsetWidth, eh = el.offsetHeight;
+  let left = Math.max(8, Math.min(window.innerWidth - ew - 8, ax - ew / 2));
+  let top = ay + 8;
+  if (top + eh > window.innerHeight - 8) top = Math.max(8, r.top + L[1] * r.height - eh - 8);
+  el.style.left = `${left}px`; el.style.top = `${top}px`;
+  corrEd = { el, m, ta };
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeCorrEditor(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeCorrEditor(false); }
+  });
+  save.addEventListener('click', () => closeCorrEditor(true));
+  del.addEventListener('click', async () => {
+    closeCorrEditor(false);
+    await db.del('marks', m.id);
+    R.marks = R.marks.filter((x) => x.id !== m.id);
+    drawMarks(m.page);
+    toast('Marca quitada');
+  });
+  setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
+}
+document.addEventListener('pointerdown', (e) => { if (corrEd && !e.target.closest('.corr-editor')) closeCorrEditor(true); }, true);
+
 async function createMark({ page, kind, rects, text, image, imagePpu, tag, math, note }) {
   const m = { id: uid(), docId: R.doc.id, page, kind, rects, text: (text || '').trim(), image: image || null, imagePpu: imagePpu || null, cropV: image && kind === 'text' ? CROP_V : undefined, math: !!math, tag, note: !!note, comment: '', createdAt: Date.now() };
   R.marks.push(m);
@@ -1854,9 +2024,11 @@ function buildTagRow() {
       if (d.edit) { // cambiar el color de una marca existente
         const m = d.edit;
         if (m.tag !== id) { m.tag = id; await db.put('marks', m); drawMarks(m.page); if (hasNote(m)) renderSheet(m.page); }
+        if (id === 'cor') openCorrEditor(m);
         return;
       }
-      await createMark({ ...d, tag: id, note: false });
+      const m = await createMark({ ...d, tag: id, note: false });
+      if (id === 'cor') openCorrEditor(m);
     });
     return b;
   });
@@ -2168,6 +2340,7 @@ function attachTextSelection(p) {
     const hit = marksOfPage(p.num).find((m) => m.rects.some(([x, y, w, hh]) => u >= x && u <= x + w && v >= y && v <= y + hh));
     if (!hit) return;
     if (hasNote(hit)) focusNote(hit.id, false);
+    else if (hit.tag === 'cor') openCorrEditor(hit);
     else showPopup(e.clientX, e.clientY, { edit: hit });
   });
   el.addEventListener('dblclick', (e) => {
@@ -2340,7 +2513,7 @@ async function exportAnnotated() {
   if (!target) return;
   busy(true, 'Generando PDF con notas…');
   try {
-    const { PDFDocument, StandardFonts, rgb, BlendMode } = await loadPdfLib();
+    const { PDFDocument, StandardFonts, rgb, BlendMode, degrees } = await loadPdfLib();
     const src = await PDFDocument.load(R.bytes.slice(0), { ignoreEncryption: true });
     const out = await PDFDocument.create();
     out.setTitle(`${R.doc.name} (con notas)`);
@@ -2441,6 +2614,17 @@ async function exportAnnotated() {
           const rx = Math.min(ax, bx), ry = Math.min(ay, by), rw = Math.abs(bx - ax), rh = Math.abs(by - ay);
           if (m.kind === 'area') page.drawRectangle({ x: rx, y: ry, width: rw, height: rh, borderColor: color, borderWidth: 1.5, color, opacity: 0.12, borderOpacity: 0.9 });
           else page.drawRectangle({ x: rx, y: ry, width: rw, height: rh, color, opacity: 0.38, blendMode: BlendMode.Multiply });
+        }
+        if (m.tag === 'cor' && m.corr?.text) { // corrección escrita al lado del fragmento
+          const c = m.corr, ph = rot % 180 ? cb.width : cb.height, pw = rot % 180 ? cb.height : cb.width;
+          const size = c.fs * ph, red = toRgb(tagById('cor').color);
+          if (c.leader) { const [l0x, l0y] = map(c.leader[0], c.leader[1]), [l1x, l1y] = map(c.leader[2], c.leader[3]); page.drawLine({ start: { x: l0x, y: l0y }, end: { x: l1x, y: l1y }, thickness: 0.6, color: red, opacity: 0.8 }); }
+          const [bx, by] = map(c.x, c.y), [ex, ey] = map(c.x + c.w, c.y + c.h);
+          page.drawRectangle({ x: Math.min(bx, ex), y: Math.min(by, ey), width: Math.abs(ex - bx), height: Math.abs(ey - by), color: rgb(1, 1, 1), opacity: 0.85, borderColor: red, borderWidth: 0.5, borderOpacity: 0.6 });
+          c.lines.forEach((ln, k) => {
+            const [tx, ty] = map(c.x + 3 / pw, c.y + 1.5 / ph + (k * 1.25 + 0.97) * c.fs);
+            page.drawText(clean(ln), { x: tx, y: ty, size, font, color: red, rotate: degrees(rot) });
+          });
         }
         if (!hasNote(m)) return; // marca solo de color: sin número
         const [bx0, by0] = map(m.rects[0][0], m.rects[0][1]);
