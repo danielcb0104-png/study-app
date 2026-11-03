@@ -328,6 +328,8 @@ body.editing { overflow: hidden; }
 .te-key { font: 13.5px -apple-system, system-ui, "Segoe UI", sans-serif; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; }
 .te-key b, .te-key i { font-family: Georgia, "Times New Roman", serif; font-size: 15px; min-width: 14px; text-align: center; }
 .te-key svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.te-key { --ico-accent: #3b82d6; }
+.te-key > svg:only-child { width: 24px; height: 22px; stroke-width: 1.8; }
 .te-preview { background: #e9e6df; color-scheme: light; }
 .te-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 18px 28px; }
 .te-quote { margin: 0 0 10px; }

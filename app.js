@@ -90,6 +90,8 @@ const ICON = {
   move: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M9 13h6M13 10.5l2.5 2.5-2.5 2.5"/>',
   more: '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
+  bullets: '<rect x="2.5" y="4.5" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><rect x="2.5" y="10.2" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><rect x="2.5" y="15.9" width="3.6" height="3.6" style="fill:var(--ico-accent);stroke:none"/><path d="M9.5 6.3h12M9.5 12h12M9.5 17.7h12"/>',
+  numbers: '<g style="fill:var(--ico-accent);stroke:none;font:700 7.8px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.4" y="9.1">1</text><text x="4.4" y="14.8">2</text><text x="4.4" y="20.5">3</text></g><path d="M9.5 6.3h12M9.5 12h12M9.5 17.7h12"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -1072,10 +1074,10 @@ function latexHint(cm) {
 const KEYS = [
   [() => h('b', {}, 'B'), 'Negrita: \\textbf{…}', '\\textbf{¦}'],
   [() => h('i', {}, 'I'), 'Cursiva: \\textit{…}', '\\textit{¦}'],
-  [() => '• Lista', 'Lista de puntos (itemize)', '\\begin{itemize}\n  \\item ¦\n\\end{itemize}', true],
-  [() => '1. Lista', 'Lista numerada (enumerate)', '\\begin{enumerate}\n  \\item ¦\n\\end{enumerate}', true],
+  [() => svgIcon(ICON.bullets), 'Lista de puntos (itemize)', '\\begin{itemize}\n  \\item ¦\n\\end{itemize}', true],
+  [() => svgIcon(ICON.numbers), 'Lista numerada (enumerate)', '\\begin{enumerate}\n  \\item ¦\n\\end{enumerate}', true],
   [() => [svgIcon(ICON.image), ' Figura'], 'Insertar una figura (imagen centrada)', 'figure', true],
-  [() => '\\[ \\] Ecuación', 'Ecuación centrada sin numerar: \\[ … \\]', '\\[\n  ¦\n\\]', true],
+  [() => 'Ecuación', 'Ecuación sin numerar: \\begin{equation*} … \\end{equation*}', '\\begin{equation*}\n  ¦\n\\end{equation*}', true],
 ];
 // Inserta en su propia línea (saltos de línea delante/detrás si hace falta)
 function insertBlock(cm, snippet) {
