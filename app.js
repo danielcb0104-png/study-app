@@ -902,12 +902,11 @@ function noteBlock(m, i, first, blocks, interactive, num) {
   const t = tagById(m.tag);
   let head;
   if (first) {
-    const sel = h('select', { 'aria-label': 'Etiqueta' }, TAGS.filter((tg) => !tg.legacy || tg.id === m.tag).map((tg) => h('option', { value: tg.id, selected: tg.id === m.tag }, tg.name)));
+    const sel = h('span', { class: 'tag-label' }, t.name); // el tipo de la nota no se cambia desde aquí
     const edit = h('button', { class: 'icon-btn small', title: 'Escribir / editar comentario (LaTeX)', 'aria-label': 'Editar comentario' }, svgIcon(ICON.edit));
     const up = h('button', { class: 'icon-btn small', title: 'Ver en la página', 'aria-label': 'Ver en la página' }, svgIcon(ICON.up));
     const del = h('button', { class: 'icon-btn small', title: 'Eliminar nota', 'aria-label': 'Eliminar nota' }, svgIcon(ICON.trash));
     if (interactive) {
-      sel.addEventListener('change', async (e) => { m.tag = e.target.value; await db.put('marks', m); drawMarks(num); renderSheet(num); });
       edit.addEventListener('click', () => openEditor(m));
       up.addEventListener('click', () => focusMark(m.id));
       del.addEventListener('click', () => deleteMark(m));
@@ -981,6 +980,10 @@ async function renderSheet(num) {
   const ticket = (sheetRenders.get(num) || 0) + 1;
   sheetRenders.set(num, ticket);
   if (!ms.length) { p.sheetHolder.replaceChildren(); return; }
+  // comentarios antiguos sin imagen del extracto: crearla ahora
+  for (const m of ms) {
+    if (m.kind === 'text' && !m.image && R.pages[m.page - 1]) { await captureMathImage(m); if (m.image) await db.put('marks', m); }
+  }
   await ensureImageSizes(ms);
   const blocksById = new Map();
   for (const m of ms) blocksById.set(m.id, await commentBlocks(m));
@@ -1180,8 +1183,10 @@ async function createMark({ page, kind, rects, text, image, imagePpu, tag, math,
   return m;
 }
 // Imagen del fragmento (para la página de notas) cuando tiene matemáticas
+// El extracto de los comentarios se guarda como imagen de lo seleccionado: el texto que
+// extrae el PDF a veces sale mal (símbolos como μ, fórmulas, fuentes especiales).
 async function captureMathImage(d) {
-  if (d.kind === 'text' && d.math && !d.image) {
+  if (d.kind === 'text' && !d.image) {
     try { const c = await cropLines(R.pages[d.page - 1], d.rects); d.image = c.url; d.imagePpu = c.ppu; } catch (e) { console.warn(e); }
   }
 }

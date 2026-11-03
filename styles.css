@@ -417,3 +417,6 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 @media (prefers-color-scheme: dark) { .tag-btn.tag-comment { color: #f0a070; } }
 .tag-popup { max-width: calc(100vw - 16px); }
 @media (max-width: 480px) { .tag-sep { display: none; } }
+
+/* Tipo de nota (fijo, sin desplegable) */
+.note-head .tag-label { font-size: 13px; font-weight: 700; color: var(--c); background: color-mix(in srgb, var(--c) 10%, #fff); border: 1px solid color-mix(in srgb, var(--c) 35%, #fff); border-radius: 999px; padding: 3px 11px; line-height: 1.3; }
