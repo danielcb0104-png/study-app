@@ -453,3 +453,4 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .merge-item .nm small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .merge-item .icon-btn:disabled { opacity: .3; cursor: default; }
 .merge-note { font-size: 13px; margin: 10px 0 16px !important; }
+.merge-err { color: #c0392b !important; font-size: 13px; margin: 6px 0 0 !important; }

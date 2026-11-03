@@ -453,7 +453,6 @@ async function mergeDialog(preselected = []) {
   const next = h('button', { type: 'button', class: 'btn primary' });
   const nameInput = h('input', { type: 'text', class: 'name-input', maxlength: '120' });
   let nameTouched = false;
-  nameInput.addEventListener('input', () => { nameTouched = true; });
   const defaultName = () => order.map((id) => byId.get(id).name).join(' + ').slice(0, 110);
   const dlg = h('dialog', { class: 'merge-dialog' },
     h('form', { method: 'dialog', onsubmit: (e) => e.preventDefault() }, title, sub, content,
@@ -490,7 +489,6 @@ async function mergeDialog(preselected = []) {
     const move = (i, j) => { if (j < 0 || j >= order.length) return; const [x] = order.splice(i, 1); order.splice(j, 0, x); refresh(); };
     let dragFrom = null;
     const refresh = () => {
-      if (!nameTouched) nameInput.value = defaultName();
       list.replaceChildren(...order.map((id, i) => {
         const d = byId.get(id);
         const up = h('button', { type: 'button', class: 'icon-btn small', title: 'Subir', 'aria-label': `Subir ${d.name}`, disabled: i === 0 ? 'disabled' : null }, svgIcon(ICON.arrowUp));
@@ -510,22 +508,38 @@ async function mergeDialog(preselected = []) {
     };
     refresh();
     const pages = order.reduce((a, id) => a + (byId.get(id).pageCount || 0), 0);
-    content.replaceChildren(list,
-      h('label', { class: 'name-label' }, 'Nombre del nuevo documento'), h('div', { class: 'name-row' }, nameInput),
-      h('p', { class: 'merge-note' }, `${pages} páginas en total. Se guardará en «${folderPath(folders, LIB.folderId).map((f) => f.name).join(' › ') || 'Biblioteca'}». Los documentos originales no cambian.`));
+    content.replaceChildren(list, h('p', { class: 'merge-note' }, `${pages} páginas en total.`));
+    back.textContent = 'Atrás';
+    next.textContent = 'Siguiente';
+    updateButtons();
+  };
+  // Paso 3: nombre del nuevo documento
+  const drawName = () => {
+    title.textContent = 'Nombre del nuevo documento';
+    sub.textContent = '¿Cómo quieres que se llame el documento combinado?';
+    if (!nameTouched) nameInput.value = defaultName();
+    const err = h('p', { class: 'merge-err', hidden: true }, 'Escribe un nombre para el documento.');
+    nameInput.oninput = () => { nameTouched = true; err.hidden = true; next.disabled = !nameInput.value.trim(); };
+    nameInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); next.click(); } };
+    content.replaceChildren(
+      h('label', { class: 'name-label' }, 'Nombre'), h('div', { class: 'name-row' }, nameInput), err,
+      h('p', { class: 'merge-note' }, `Contendrá ${order.map((id) => `«${byId.get(id).name}»`).join(', ')} en este orden. Se guardará en «${folderPath(folders, LIB.folderId).map((f) => f.name).join(' › ') || 'Biblioteca'}». Los documentos originales no cambian.`));
     back.textContent = 'Atrás';
     next.textContent = 'Crear documento';
-    updateButtons();
+    next.disabled = !nameInput.value.trim();
+    setTimeout(() => { nameInput.focus(); nameInput.select(); }, 0);
   };
   const updateButtons = () => {
     next.disabled = order.length < 2;
     if (step === 1) next.textContent = order.length >= 2 ? `Siguiente (${order.length})` : 'Siguiente';
   };
-  back.addEventListener('click', () => { if (step === 2) { step = 1; drawSelect(); } else dlg.close(); });
+  back.addEventListener('click', () => { if (step === 3) { step = 2; drawOrder(); } else if (step === 2) { step = 1; drawSelect(); } else dlg.close(); });
   next.addEventListener('click', async () => {
     if (order.length < 2) return;
     if (step === 1) { step = 2; drawOrder(); return; }
-    const name = nameInput.value.trim().replace(/\s+/g, ' ') || defaultName();
+    if (step === 2) { step = 3; drawName(); return; }
+    const name = nameInput.value.trim().replace(/\s+/g, ' ');
+    if (!name) { content.querySelector('.merge-err').hidden = false; nameInput.focus(); return; }
     dlg.close();
     await mergeDocs([...order], name);
   });
