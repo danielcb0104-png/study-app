@@ -637,3 +637,16 @@ body.has-minimap #reader .pages { padding-right: 130px; }
 .split-preview.small { padding: 8px; margin: 0; gap: 8px; }
 .split-preview.small canvas { width: 90px; max-height: 128px; }
 .split-names { max-height: min(46vh, 420px); overflow: auto; padding: 2px 2px 0; }
+
+/* Editor: pestañas «Resultado» / «Documento» */
+.te-tabs { display: flex; gap: 4px; padding: 6px 10px 4px; flex: none; }
+.te-tab { border: 0; background: transparent; font: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: #8a8f99; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
+.te-tab:hover { background: rgba(0,0,0,.05); }
+.te-tab.on { background: #fff; color: #1d2330; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.te-docview { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 6px 14px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.te-docview[hidden], .te-scroll[hidden] { display: none; }
+.ed-page { position: relative; flex: none; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.18); }
+.ed-page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ed-page-num { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: #9a9a9a; z-index: 1; }
+.ed-mark { position: absolute; mix-blend-mode: multiply; border-radius: 2px; z-index: 1; }
+.ed-mark.cur { box-shadow: 0 0 0 2px var(--c); }

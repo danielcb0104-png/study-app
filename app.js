@@ -30,7 +30,7 @@ const LANGS = [['es', 'Castellano'], ['ca', 'Català'], ['en', 'English']];
 const I18N = {
   es: {
     notes: 'Notas', page: 'página', sheetOf: (k, n) => `hoja ${k} de ${n}`, cont: 'continuación', contShort: 'cont.',
-    code: 'Código LaTeX', result: 'Resultado', done: 'Listo', saving: 'Guardando…', saved: 'Guardado', comment: 'Comentario',
+    code: 'Código LaTeX', result: 'Resultado', docView: 'Documento', docViewTip: 'Ver las páginas del documento mientras escribes', done: 'Listo', saving: 'Guardando…', saved: 'Guardado', comment: 'Comentario',
     figure: 'Figura', equation: 'Ecuación', bullets: 'Lista de puntos (itemize)', numbered: 'Lista numerada (enumerate)',
     bold: 'Negrita', italic: 'Cursiva', figTip: 'Insertar una figura (imagen centrada)', eqTip: 'Ecuación sin numerar',
     placeholder: 'Pulsa aquí para escribir tu comentario (admite LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
@@ -43,7 +43,7 @@ const I18N = {
   },
   ca: {
     notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
-    code: 'Codi LaTeX', result: 'Resultat', done: 'Fet', saving: 'Desant…', saved: 'Desat', comment: 'Comentari',
+    code: 'Codi LaTeX', result: 'Resultat', docView: 'Document', docViewTip: 'Veure les pàgines del document mentre escrius', done: 'Fet', saving: 'Desant…', saved: 'Desat', comment: 'Comentari',
     figure: 'Figura', equation: 'Equació', bullets: 'Llista de punts (itemize)', numbered: 'Llista numerada (enumerate)',
     bold: 'Negreta', italic: 'Cursiva', figTip: 'Inserir una figura (imatge centrada)', eqTip: 'Equació sense numerar',
     placeholder: 'Fes clic aquí per escriure el teu comentari (admet LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
@@ -56,7 +56,7 @@ const I18N = {
   },
   en: {
     notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
-    code: 'LaTeX code', result: 'Result', done: 'Done', saving: 'Saving…', saved: 'Saved', comment: 'Comment',
+    code: 'LaTeX code', result: 'Result', docView: 'Document', docViewTip: 'See the document pages while you write', done: 'Done', saving: 'Saving…', saved: 'Saved', comment: 'Comment',
     figure: 'Figure', equation: 'Equation', bullets: 'Bulleted list (itemize)', numbered: 'Numbered list (enumerate)',
     bold: 'Bold', italic: 'Italic', figTip: 'Insert a figure (centred image)', eqTip: 'Unnumbered equation',
     placeholder: 'Click here to write your comment (LaTeX supported: $x^2$, \\[ … \\], \\textbf{…})',
@@ -2059,13 +2059,22 @@ async function openEditor(m) {
       });
       return b;
     }));
-    const codeLabel = h('div', { class: 'te-label' }), resultLabel = h('div', { class: 'te-label' });
+    const codeLabel = h('div', { class: 'te-label' });
+    // a la derecha: «Resultado» (LaTeX compilado) o «Documento» (las páginas del PDF)
+    const resultLabel = h('button', { type: 'button', class: 'te-tab', role: 'tab' });
+    const docTab = h('button', { type: 'button', class: 'te-tab', role: 'tab' });
+    const resultScroll = h('div', { class: 'te-scroll' }, quote, paper);
+    const docView = h('div', { class: 'te-docview', hidden: true });
+    resultLabel.addEventListener('click', () => setEdView('result'));
+    docTab.addEventListener('click', () => setEdView('doc'));
     const root = h('div', { class: 'tex-editor', hidden: true },
       h('div', { class: 'te-panel', role: 'dialog', 'aria-label': 'Editor de comentario LaTeX' },
         h('header', { class: 'te-bar' }, title, h('span', { class: 'spacer' }), status, done),
         h('div', { class: 'te-main' },
           h('section', { class: 'te-code' }, codeLabel, codeBox, keys),
-          h('section', { class: 'te-preview' }, resultLabel, h('div', { class: 'te-scroll' }, quote, paper)),
+          h('section', { class: 'te-preview' },
+            h('div', { class: 'te-tabs', role: 'tablist' }, resultLabel, docTab),
+            resultScroll, docView),
         )));
     document.body.append(root);
     const cm = CM(codeBox, {
@@ -2094,7 +2103,8 @@ async function openEditor(m) {
     });
     done.addEventListener('click', () => closeEditor());
     root.addEventListener('pointerdown', (e) => { if (e.target === root) closeEditor(); });
-    ED = { root, cm, paper, quote, status, title, relabel: () => { fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); } };
+    ED = { root, cm, paper, quote, status, title, resultLabel, docTab, resultScroll, docView,
+      relabel: () => { fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); docTab.textContent = T('docView'); docTab.title = T('docViewTip'); } };
   }
   ED.m = m;
   ED.relabel();
@@ -2114,6 +2124,62 @@ async function openEditor(m) {
   ED.cm.focus();
   ED.cm.setCursor(ED.cm.lineCount(), 0);
   updatePreview();
+  ED.docFor = null;
+  setEdView(localStorage.getItem('study-ed-view') === 'doc' ? 'doc' : 'result', false);
+}
+/* Vista «Documento» del editor: las páginas del PDF, abiertas donde está el fragmento */
+function setEdView(v, remember = true) {
+  if (!ED) return;
+  const doc = v === 'doc';
+  ED.resultLabel.classList.toggle('on', !doc); ED.resultLabel.setAttribute('aria-selected', String(!doc));
+  ED.docTab.classList.toggle('on', doc); ED.docTab.setAttribute('aria-selected', String(doc));
+  ED.resultScroll.hidden = doc; ED.docView.hidden = !doc;
+  if (remember) { try { localStorage.setItem('study-ed-view', v); } catch {} }
+  if (doc && ED.m && ED.docFor !== ED.m.id) buildEdDocView(ED.m);
+}
+function buildEdDocView(m) {
+  const box = ED.docView;
+  ED.docFor = m.id;
+  ED.docObs?.disconnect();
+  box.replaceChildren();
+  const W = Math.max(200, box.clientWidth - 28);
+  const holders = [];
+  for (const p of R.pages) {
+    const H = Math.round((W * p.h) / p.w);
+    const hl = h('div', { class: 'ed-page', 'data-n': p.num, style: { width: `${W}px`, height: `${H}px` } }, h('span', { class: 'ed-page-num' }, String(p.num)));
+    // marcas de la página (la del comentario, más visible)
+    for (const mk of marksOfPage(p.num)) {
+      const c = tagById(mk.tag).color, cur = mk.id === m.id;
+      for (const [x, y, w, hh] of mk.rects) {
+        const el = h('i', { class: `ed-mark${cur ? ' cur' : ''}`, style: { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${hh * 100}%`, background: hexA(c, cur ? 0.45 : 0.25) } });
+        el.style.setProperty('--c', c);
+        hl.append(el);
+      }
+    }
+    holders.push(hl);
+  }
+  box.append(...holders);
+  const render = async (hl) => {
+    if (hl.dataset.done) return;
+    hl.dataset.done = '1';
+    const p = R.pages[+hl.dataset.n - 1];
+    try {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const vp = p.page.getViewport({ scale: (W * dpr) / p.w });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      await p.page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      hl.prepend(c);
+    } catch (e) { delete hl.dataset.done; console.warn(e); }
+  };
+  ED.docObs = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && render(e.target)), { root: box, rootMargin: '800px 0px' });
+  holders.forEach((x) => ED.docObs.observe(x));
+  // abrir por donde está el fragmento
+  const target = holders[m.page - 1];
+  if (target) {
+    const y = target.offsetTop + (m.rects?.[0]?.[1] || 0) * target.offsetHeight - box.clientHeight * 0.3;
+    box.scrollTop = Math.max(0, y);
+  }
 }
 async function updatePreview() {
   if (!ED?.m) return;
