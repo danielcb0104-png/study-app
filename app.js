@@ -3385,7 +3385,8 @@ async function authSubmit(e) {
       const { error } = await SYNC.sb.auth.updateUser({ password: pass });
       if (error) { authMsg(`No se pudo guardar: ${error.message}`, 'err'); return; }
       $('#authPass').value = ''; $('#authPass2').value = '';
-      hideAuth(); toast('Contraseña guardada');
+      sessionStorage.removeItem('study-need-pw');
+      hideAuth(); toast('Contraseña guardada. Úsala con tu correo para entrar en tus otros dispositivos.');
       await afterSignIn();
     }
   } finally { btn.disabled = false; }
@@ -3409,6 +3410,8 @@ async function doAfterSignIn() {
     updateAccountUI();
     runSync();
   }
+  // vino de un enlace de invitación o de recuperación: elegir contraseña ahora
+  if (sessionStorage.getItem('study-need-pw')) showAuth('password');
 }
 async function signOut() {
   if (SYNC.uid) {
@@ -3454,7 +3457,8 @@ async function initAccounts() {
   if (!SYNC.on) return;
   // enlaces de invitación o de recuperación: después de entrar hay que elegir contraseña
   const hash = new URLSearchParams(location.hash.slice(1));
-  const needPassword = ['invite', 'recovery'].includes(hash.get('type'));
+  const q = new URLSearchParams(location.search);
+  if (['invite', 'recovery'].includes(hash.get('type')) || ['invite', 'recovery'].includes(q.get('type'))) sessionStorage.setItem('study-need-pw', '1');
   const linkError = hash.get('error_description');
   try {
     await loadScript('./vendor/supabase.js');
@@ -3468,7 +3472,6 @@ async function initAccounts() {
   if (location.hash.includes('access_token') || linkError) history.replaceState(null, '', location.pathname);
   if (data?.session) {
     await afterSignIn();
-    if (needPassword) showAuth('password');
   } else if (!localStorage.getItem('study-local-only')) {
     showAuth('login');
     if (linkError) authMsg(`El enlace no es válido o ha caducado (${linkError}). Pide otra invitación o usa «¿Has olvidado la contraseña?».`, 'err');
