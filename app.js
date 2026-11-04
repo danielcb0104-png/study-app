@@ -1322,6 +1322,8 @@ function chooseLang(anchor) {
 
 function closeReader(push = true) {
   resetFind();
+  mmReset();
+  document.body.classList.remove('has-minimap');
   R.observer?.disconnect(); R.visObserver?.disconnect();
   if (R.pdf) { R.pdf.destroy(); }
   R.pdf = null; R.doc = null; R.pages = []; R.bytes = null;
@@ -1387,6 +1389,7 @@ async function buildPages() {
   }
   container.append(frag);
   for (const p of R.pages) { refreshReadUI(p.num); drawMarks(p.num); renderSheet(p.num); }
+  mmBuild();
 }
 
 function onRenderIntersect(entries) {
@@ -1580,14 +1583,15 @@ async function setZoom(z) {
   if (!R.doc || z === R.doc.zoom) return;
   const current = R.doc.lastPage || 1;
   // posición relativa dentro de la página actual
-  const p = R.pages[current - 1];
-  const rect = p.el.getBoundingClientRect();
+  const p = R.pages[current - 1] || R.pages[0];
+  const rect = p?.el?.getBoundingClientRect() || { top: 0, height: 0 };
   const rel = rect.height ? (70 - rect.top) / rect.height : 0;
   R.doc.zoom = z;
   db.put('docs', R.doc);
   for (const pg of R.pages) releasePage(pg);
   await buildPages();
-  const np = R.pages[current - 1];
+  const np = R.pages[current - 1] || R.pages[0];
+  if (!np) return;
   const top = np.el.getBoundingClientRect().top + window.scrollY - 70 + rel * np.el.offsetHeight;
   window.scrollTo({ top, behavior: 'instant' });
 }
@@ -1607,6 +1611,7 @@ function refreshReadUI(num) {
   p.el.classList.toggle('read', on);
   p.toggle.classList.toggle('on', on);
   p.toggle.replaceChildren(svgIcon(on ? ICON.check : ICON.circle), on ? 'Leída' : 'Marcar como leída');
+  mmSoon();
 }
 function updateProgress() {
   if (!R.doc) return;
@@ -1646,6 +1651,7 @@ function drawMarks(num) {
     p.badgeLayer.append(b);
   });
   drawCorrections(p);
+  mmSoon();
 }
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
@@ -1816,6 +1822,7 @@ async function renderSheet(num) {
   });
   p.sheetHolder.replaceChildren(frag);
   findRefreshSoon();
+  mmSoon();
 }
 const saveTimers = new Map();
 function saveComment(m, now = false) {
@@ -3173,6 +3180,122 @@ async function importBackup(file) {
 }
 
 /* =========================================================
+   MINIMAPA (como el de VS Code): miniatura de todo el documento a la derecha
+   para moverse rápido. Al lado, una línea vertical marca en verde las
+   páginas leídas (con sus hojas de notas).
+   ========================================================= */
+const MM = { s: 1, contentH: 0, docTop: 0, offset: 0, thumbs: new Map(), token: 0, soonT: null, raf: 0, drag: null };
+const mmEnabled = () => !!R.doc && !$('#reader').hidden && window.innerWidth > 720 && R.pages.length > 0;
+function mmBuild() { MM.token++; MM.thumbs = new Map(); mmLayout(); mmRenderThumbs(MM.token); }
+function mmSoon() { clearTimeout(MM.soonT); MM.soonT = setTimeout(mmLayout, 120); }
+function mmReset() { MM.token++; MM.thumbs = new Map(); $('#mmContent')?.replaceChildren(); $('#mmReadInner')?.replaceChildren(); }
+const mmBarH = () => document.querySelector('#reader .topbar')?.offsetHeight || 60;
+function mmLayout() {
+  const mm = $('#minimap');
+  if (!mm) return;
+  document.body.classList.toggle('has-minimap', mmEnabled());
+  if (!mmEnabled()) { mm.hidden = true; return; }
+  mm.hidden = false;
+  const track = $('#mmTrack'), W = track.clientWidth;
+  const pagesEl = $('#pages');
+  const docTop = pagesEl.getBoundingClientRect().top + scrollY;
+  const maxW = Math.max(1, ...R.pages.map((p) => p.el.offsetWidth));
+  const s = W / maxW;
+  MM.s = s; MM.docTop = docTop;
+  const read = new Set(R.doc.read || []);
+  const box = (el) => { const r = el.getBoundingClientRect(); const w = r.width * s; return { top: (r.top + scrollY - docTop) * s, h: r.height * s, w, left: (W - w) / 2 }; };
+  const frag = document.createDocumentFragment(), rfrag = document.createDocumentFragment();
+  for (const p of R.pages) {
+    const b = box(p.el);
+    const pg = h('div', { class: 'mm-page', 'data-n': p.num, title: `Página ${p.num}`, style: { top: `${b.top}px`, height: `${b.h}px`, width: `${b.w}px`, left: `${b.left}px` } });
+    const th = MM.thumbs.get(p.num);
+    if (th) pg.append(th);
+    for (const m of marksOfPage(p.num)) {
+      const c = tagById(m.tag).color;
+      for (const [x, y, w, hh] of m.rects) pg.append(h('i', { class: 'mm-mark', style: { left: `${x * 100}%`, top: `${y * 100}%`, width: `${Math.max(w * 100, 2)}%`, height: `${Math.max(hh * 100, 0.6)}%`, background: c } }));
+    }
+    if (p.el.classList.contains('read')) pg.classList.add('read');
+    frag.append(pg);
+    let bottom = b.top + b.h;
+    for (const sh of p.sheetHolder?.querySelectorAll('.sheet') || []) {
+      const sb = box(sh);
+      frag.append(h('div', { class: 'mm-sheet', title: `Notas · página ${p.num}`, style: { top: `${sb.top}px`, height: `${sb.h}px`, width: `${sb.w}px`, left: `${sb.left}px` } }));
+      bottom = sb.top + sb.h;
+    }
+    // la línea de leído cubre la página y sus hojas de notas
+    if (read.has(p.num)) rfrag.append(h('i', { class: 'mm-read-seg', style: { top: `${b.top}px`, height: `${bottom - b.top}px` } }));
+  }
+  $('#mmContent').replaceChildren(frag);
+  $('#mmReadInner').replaceChildren(rfrag);
+  MM.contentH = pagesEl.getBoundingClientRect().height * s;
+  mmScroll();
+}
+function mmScroll() {
+  if (!mmEnabled() || $('#minimap').hidden) return;
+  const track = $('#mmTrack'), trackH = track.clientHeight;
+  const maxScroll = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+  // si el documento no cabe entero, el minimapa también se desplaza (proporcionalmente)
+  const off = MM.contentH > trackH ? (MM.contentH - trackH) * Math.min(1, Math.max(0, scrollY / maxScroll)) : 0;
+  MM.offset = off;
+  $('#mmContent').style.transform = `translateY(${-off}px)`;
+  $('#mmReadInner').style.transform = `translateY(${-off}px)`;
+  const barH = mmBarH();
+  const view = $('#mmView');
+  view.style.top = `${(scrollY + barH - MM.docTop) * MM.s - off}px`;
+  view.style.height = `${Math.max(8, (innerHeight - barH) * MM.s)}px`;
+}
+async function mmRenderThumbs(token) {
+  await new Promise((r) => setTimeout(r, 400)); // primero, las páginas visibles del lector
+  for (const p of R.pages) {
+    if (MM.token !== token || !mmEnabled()) return;
+    if (MM.thumbs.has(p.num)) continue;
+    try {
+      const W = $('#mmTrack').clientWidth || 86, dpr = Math.min(2, window.devicePixelRatio || 1);
+      const v0 = p.page.getViewport({ scale: 1 });
+      const vp = p.page.getViewport({ scale: (W * dpr) / v0.width });
+      const c = document.createElement('canvas');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      await p.page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      if (MM.token !== token) return;
+      MM.thumbs.set(p.num, c);
+      $(`#mmContent .mm-page[data-n="${p.num}"]`)?.prepend(c);
+    } catch (e) { if (e?.name !== 'RenderingCancelledException') console.warn('minimapa', e); }
+  }
+}
+function initMinimap() {
+  const track = $('#mmTrack'), view = $('#mmView');
+  const jump = (clientY) => {
+    const y = clientY - track.getBoundingClientRect().top;
+    const docY = (y + MM.offset) / MM.s + MM.docTop;
+    const barH = mmBarH();
+    window.scrollTo({ top: docY - barH - (innerHeight - barH) / 2, behavior: 'instant' });
+  };
+  track.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    track.setPointerCapture(e.pointerId);
+    const vr = view.getBoundingClientRect();
+    if (e.clientY < vr.top || e.clientY > vr.bottom) jump(e.clientY);
+    MM.drag = { y0: e.clientY, s0: scrollY };
+    track.classList.add('dragging');
+  });
+  track.addEventListener('pointermove', (e) => {
+    if (!MM.drag) return;
+    const trackH = track.clientHeight, vh = view.offsetHeight;
+    const maxScroll = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+    const factor = MM.contentH > trackH ? maxScroll / Math.max(1, trackH - vh) : 1 / MM.s;
+    window.scrollTo({ top: MM.drag.s0 + (e.clientY - MM.drag.y0) * factor, behavior: 'instant' });
+  });
+  const end = () => { MM.drag = null; track.classList.remove('dragging'); };
+  track.addEventListener('pointerup', end);
+  track.addEventListener('pointercancel', end);
+  // la rueda sobre el minimapa desplaza el documento
+  track.addEventListener('wheel', (e) => { e.preventDefault(); window.scrollBy({ top: e.deltaY * 3, behavior: 'instant' }); }, { passive: false });
+  window.addEventListener('scroll', () => { if (!MM.raf) MM.raf = requestAnimationFrame(() => { MM.raf = 0; mmScroll(); }); }, { passive: true });
+  window.addEventListener('resize', () => { mmSoon(); if (mmEnabled()) mmRenderThumbs(MM.token); });
+}
+
+/* =========================================================
    CUENTAS Y SINCRONIZACIÓN (Supabase)
    - Los datos siguen guardándose en el dispositivo (funciona sin conexión).
    - Cada cambio se apunta en «outbox» y se sube a la nube; lo que cambió en otros
@@ -3497,6 +3620,7 @@ function init() {
   buildTagRow();
   initFind();
   initAuthUI();
+  initMinimap();
   $('#fileInput').addEventListener('change', (e) => { importFiles(e.target.files); e.target.value = ''; });
   $('#btnBack').addEventListener('click', () => closeReader());
   $('#modeText').addEventListener('click', () => setMode('text'));
