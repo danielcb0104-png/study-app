@@ -37,6 +37,10 @@
         <svg viewBox="0 0 24 24"><path d="M12 3v5c0 4-6 5-6 9v4"/><path d="M12 8c0 4 6 5 6 9v4"/><path d="M3.5 18.5L6 21l2.5-2.5M15.5 18.5L18 21l2.5-2.5"/></svg>
         <span class="lbl">Fisionar</span>
       </button>
+      <button class="btn" id="btnAccount" title="Iniciar sesión" hidden>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0115 0"/></svg>
+        <span class="lbl" id="accountLbl">Entrar</span><i class="sync-dot"></i>
+      </button>
       <button class="btn" id="btnTrash" title="Papelera: documentos eliminados">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
         <span class="lbl">Papelera</span><span class="badge" id="trashCount" hidden>0</span>
@@ -75,6 +79,24 @@
       <label class="btn primary" for="fileInput">Añadir PDF</label>
     </div>
   </main>
+</div>
+
+<!-- ============ ACCESO (cuentas) ============ -->
+<div id="auth" class="auth" hidden>
+  <form id="authForm" class="auth-card" novalidate>
+    <img src="icons/icon-192.png" alt="" width="72" height="72" class="auth-logo">
+    <h2 id="authTitle">Iniciar sesión</h2>
+    <p id="authSub" class="auth-sub"></p>
+    <label class="auth-field auth-email">Correo<input type="email" id="authEmail" autocomplete="username" inputmode="email" spellcheck="false"></label>
+    <label class="auth-field auth-pass">Contraseña<input type="password" id="authPass" autocomplete="current-password"></label>
+    <label class="auth-field auth-pass2">Repite la contraseña<input type="password" id="authPass2" autocomplete="new-password"></label>
+    <p id="authMsg" class="auth-msg" hidden></p>
+    <button class="btn primary auth-go" id="authGo" type="submit"><span class="go-login">Entrar</span><span class="go-forgot">Enviar el enlace</span><span class="go-password">Guardar contraseña</span></button>
+    <button class="linkish auth-forgot" id="authForgot" type="button">¿Has olvidado la contraseña?</button>
+    <button class="linkish auth-back" id="authBack" type="button">← Volver</button>
+    <p class="auth-note">El acceso es solo por invitación. Si no tienes cuenta, pídesela a quien administra la app.</p>
+    <button class="linkish auth-local" id="authLocal" type="button">Usar sin cuenta (solo en este dispositivo)</button>
+  </form>
 </div>
 
 <!-- ============ LECTOR ============ -->

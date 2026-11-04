@@ -2,6 +2,7 @@
 // Guarda todo en IndexedDB (en este dispositivo). Sin servidor.
 import * as pdfjsLib from './vendor/pdf.min.mjs';
 import { renderLatex, latexForPdf, loadMathJax, COMPLETIONS } from './latex.js';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 
@@ -92,13 +93,15 @@ let dbp = null;
 function openDB() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('marks')) db.createObjectStore('marks', { keyPath: 'id' }).createIndex('docId', 'docId');
       if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
+      // v3: cambios pendientes de subir a la nube
+      if (!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox', { keyPath: 'k' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -118,11 +121,19 @@ async function tx(store, mode, fn) {
   });
 }
 const reqP = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+// Los cambios en estos almacenes se apuntan para subirlos a la nube (si hay sesión iniciada)
+const SYNCED = new Set(['docs', 'folders', 'marks', 'files']);
 const db = {
   getAll: (store) => tx(store, 'readonly', (s) => reqP(s.getAll())),
+  keys: (store) => tx(store, 'readonly', (s) => reqP(s.getAllKeys())),
   get: (store, id) => tx(store, 'readonly', (s) => reqP(s.get(id))),
-  put: (store, val) => tx(store, 'readwrite', (s) => reqP(s.put(val))),
-  del: (store, id) => tx(store, 'readwrite', (s) => reqP(s.delete(id))),
+  put: async (store, val) => { const r = await tx(store, 'readwrite', (s) => reqP(s.put(val))); if (SYNCED.has(store)) syncQueue(store, val.id, 'put'); return r; },
+  del: async (store, id) => { const r = await tx(store, 'readwrite', (s) => reqP(s.delete(id))); if (SYNCED.has(store)) syncQueue(store, id, 'del'); return r; },
+  // sin apuntar el cambio (para lo que llega de la nube)
+  putRaw: (store, val) => tx(store, 'readwrite', (s) => reqP(s.put(val))),
+  delRaw: (store, id) => tx(store, 'readwrite', (s) => reqP(s.delete(id))),
+  clear: (store) => tx(store, 'readwrite', (s) => reqP(s.clear())),
+  count: (store) => tx(store, 'readonly', (s) => reqP(s.count())),
   marksOf: (docId) => tx('marks', 'readonly', (s) => reqP(s.index('docId').getAll(docId))),
 };
 
@@ -161,6 +172,9 @@ const ICON = {
   restore: '<path d="M4 12a8 8 0 108-8 8.3 8.3 0 00-5.7 2.3L4 8.6"/><path d="M4 4v4.6h4.6"/>',
   correct: '<path d="M3 13h8"/><path d="M13.5 19.5l7-7a2.1 2.1 0 00-3-3l-7 7-1 4z"/>',
   note: '<path d="M5 4h14v16H5z"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/>',
+  user: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0115 0"/>',
+  cloud: '<path d="M7 18.5h10.5a4 4 0 00.6-7.95A6 6 0 006.6 9.2 4.7 4.7 0 007 18.5z"/>',
+  logout: '<path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -231,6 +245,7 @@ function descendants(folders, id) {
 async function renderLibrary() {
   const [docsEvery, folders, allMarks] = await Promise.all([db.getAll('docs'), db.getAll('folders'), db.getAll('marks')]);
   const trashed = docsEvery.filter((d) => !live(d));
+  const localFiles = SYNC.uid ? new Set(await db.keys('files')) : null;
   const docsAll = docsEvery.filter(live);
   const tc = $('#trashCount');
   tc.textContent = String(trashed.length); tc.hidden = !trashed.length;
@@ -325,7 +340,7 @@ async function renderLibrary() {
         d.desc ? h('div', { class: 'desc', title: d.desc }, d.desc) : null,
         h('div', { class: 'bar' }, h('div', { style: { width: `${p * 100}%` } })),
         h('div', { class: 'meta' },
-          h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.${counts[d.id] ? ` · ${counts[d.id]} notas` : ''}`),
+          h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.${counts[d.id] ? ` · ${counts[d.id]} notas` : ''}`, localFiles && !localFiles.has(d.id) ? h('span', { class: 'cloud-only', title: 'Está en la nube: se descargará al abrirlo' }, svgIcon(ICON.cloud)) : null),
           more),
       ),
     );
@@ -668,7 +683,7 @@ async function splitDialog(preId = null) {
       const old = pdfP; pdfFor = doc.id;
       pdfP = (async () => {
         old?.then((x) => x.destroy()).catch(() => {});
-        const file = await db.get('files', doc.id);
+        const file = await getFile(doc.id);
         return pdfjsLib.getDocument({ data: file.data.slice(0) }).promise;
       })();
     }
@@ -768,7 +783,7 @@ async function splitDoc(id, cut, names) {
   busy(true, 'Fisionando el documento…');
   try {
     const { PDFDocument } = await loadPdfLib();
-    const [doc, file] = await Promise.all([db.get('docs', id), db.get('files', id)]);
+    const [doc, file] = await Promise.all([db.get('docs', id), getFile(id)]);
     if (!doc || !file) throw new Error('Documento no encontrado');
     const src = await PDFDocument.load(file.data.slice(0), { ignoreEncryption: true });
     const n = src.getPageCount();
@@ -822,7 +837,7 @@ async function mergeDocs(ids, name) {
     let offset = 0;
     for (const [k, id] of ids.entries()) {
       busy(true, `Fusionando documentos… (${k + 1}/${ids.length})`);
-      const [doc, file] = await Promise.all([db.get('docs', id), db.get('files', id)]);
+      const [doc, file] = await Promise.all([db.get('docs', id), getFile(id)]);
       if (!doc || !file) throw new Error('Documento no encontrado');
       const src = await PDFDocument.load(file.data.slice(0), { ignoreEncryption: true });
       const pages = await out.copyPages(src, src.getPageIndices());
@@ -1045,7 +1060,7 @@ async function openDoc(id) {
   busy(true, 'Abriendo…');
   try {
     const doc = await db.get('docs', id);
-    const file = await db.get('files', id);
+    const file = await getFile(id, true);
     if (!doc || !file) throw new Error('No encontrado');
     R.doc = doc;
     R.bytes = file.data;
@@ -3133,7 +3148,7 @@ async function exportBackup() {
     const folders = await db.getAll('folders');
     const parts = [`{"app":"study-app","version":2,"exportedAt":${Date.now()},"folders":${JSON.stringify(folders)},"docs":${JSON.stringify(docs)},"marks":${JSON.stringify(marks)},"files":[`];
     for (const [i, d] of docs.entries()) {
-      const f = await db.get('files', d.id);
+      const f = await getFile(d.id).catch(() => null);
       if (!f) continue;
       parts.push(`${i ? ',' : ''}{"id":${JSON.stringify(d.id)},"b64":"`, bufToB64(f.data), '"}');
     }
@@ -3158,11 +3173,327 @@ async function importBackup(file) {
 }
 
 /* =========================================================
+   CUENTAS Y SINCRONIZACIÓN (Supabase)
+   - Los datos siguen guardándose en el dispositivo (funciona sin conexión).
+   - Cada cambio se apunta en «outbox» y se sube a la nube; lo que cambió en otros
+     dispositivos se descarga («pull») desde la última sincronización.
+   - Tabla items(user_id, store, id, data, deleted, updated_at) y almacén «pdfs/<usuario>/<doc>.pdf».
+   ========================================================= */
+const SYNC = { on: !!(SUPABASE_URL && SUPABASE_KEY), sb: null, uid: null, email: null, timer: null, running: false, again: false, last: 0, error: null, pending: 0 };
+const ownerKey = 'study-owner';
+const lastKey = () => `study-sync-last-${SYNC.uid}`;
+async function syncQueue(store, id, op) {
+  if (!SYNC.uid || id == null) return;
+  await tx('outbox', 'readwrite', (s) => reqP(s.put({ k: `${store}:${id}`, store, id, op, t: Date.now() + Math.random() })));
+  scheduleSync(1500);
+}
+function scheduleSync(ms = 1500) {
+  if (!SYNC.uid) return;
+  clearTimeout(SYNC.timer);
+  SYNC.timer = setTimeout(() => runSync(), ms);
+}
+const pdfPath = (id) => `${SYNC.uid}/${id}.pdf`;
+// PDF del documento: del dispositivo o, si no está, de la nube
+async function getFile(id, showBusy = false) {
+  const f = await db.get('files', id);
+  if (f || !SYNC.uid) return f;
+  if (!navigator.onLine) throw new Error('Este documento todavía no se ha descargado en este dispositivo y no hay conexión.');
+  if (showBusy) busy(true, 'Descargando el PDF…');
+  const { data, error } = await SYNC.sb.storage.from('pdfs').download(pdfPath(id));
+  if (error) throw new Error(`No se pudo descargar el PDF (${error.message || error})`);
+  const rec = { id, data: await data.arrayBuffer() };
+  await db.putRaw('files', rec);
+  return rec;
+}
+async function runSync() {
+  if (!SYNC.uid || !SYNC.sb) return;
+  if (SYNC.running) { SYNC.again = true; return; }
+  if (!navigator.onLine) { SYNC.error = 'offline'; updateAccountUI(); return; }
+  SYNC.running = true; SYNC.again = false; updateAccountUI();
+  try {
+    await pushOutbox();
+    const changed = await pullChanges();
+    SYNC.error = null; SYNC.last = Date.now();
+    if (changed.size) await applyRemoteToUI(changed);
+  } catch (e) {
+    console.warn('sync', e);
+    SYNC.error = e?.message || String(e);
+  } finally {
+    SYNC.running = false;
+    SYNC.pending = await db.count('outbox').catch(() => 0);
+    updateAccountUI();
+    if (SYNC.again) scheduleSync(300);
+  }
+}
+async function pushOutbox() {
+  const items = (await db.getAll('outbox')).sort((a, b) => a.t - b.t);
+  if (!items.length) return;
+  const done = [];
+  // 1) PDF primero (así otro dispositivo nunca ve un documento sin su archivo)
+  for (const it of items.filter((i) => i.store === 'files')) {
+    if (it.op === 'put') {
+      const f = await db.get('files', it.id);
+      if (f) {
+        const { error } = await SYNC.sb.storage.from('pdfs').upload(pdfPath(it.id), new Uint8Array(f.data), { upsert: true, contentType: 'application/pdf' });
+        if (error) throw new Error(`Subida del PDF: ${error.message || error}`);
+      }
+    } else {
+      const { error } = await SYNC.sb.storage.from('pdfs').remove([pdfPath(it.id)]);
+      if (error) console.warn('remove', error);
+    }
+    done.push(it);
+  }
+  // 2) documentos, carpetas y marcas (en tandas de ~1,5 MB)
+  const rows = [];
+  for (const it of items.filter((i) => i.store !== 'files')) {
+    const v = it.op === 'put' ? await db.get(it.store, it.id) : null;
+    rows.push({ it, row: { store: it.store, id: String(it.id), data: v || null, deleted: !v } });
+  }
+  let batch = [], size = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const { error } = await SYNC.sb.from('items').upsert(batch.map((b) => b.row), { onConflict: 'user_id,store,id' });
+    if (error) throw new Error(`Subida de datos: ${error.message || error}`);
+    done.push(...batch.map((b) => b.it));
+    batch = []; size = 0;
+  };
+  for (const r of rows) {
+    const sz = JSON.stringify(r.row).length;
+    if (batch.length && (size + sz > 1.5e6 || batch.length >= 200)) await flush();
+    batch.push(r); size += sz;
+  }
+  await flush();
+  // 3) quitar de la cola lo subido (si no ha vuelto a cambiar mientras tanto)
+  await tx('outbox', 'readwrite', async (s) => {
+    for (const it of done) {
+      const cur = await reqP(s.get(it.k));
+      if (cur && cur.t === it.t) s.delete(it.k);
+    }
+  });
+}
+async function pullChanges() {
+  const changed = new Set(); // ids de documentos afectados ('*' = biblioteca)
+  let since = localStorage.getItem(lastKey()) || '1970-01-01T00:00:00Z';
+  const pendingKeys = new Set(await db.keys('outbox'));
+  for (let page = 0; page < 200; page++) {
+    const { data, error } = await SYNC.sb.from('items').select('*').gt('updated_at', since).order('updated_at', { ascending: true }).limit(500);
+    if (error) throw new Error(`Descarga de datos: ${error.message || error}`);
+    if (!data?.length) break;
+    for (const row of data) {
+      if (pendingKeys.has(`${row.store}:${row.id}`)) continue; // aquí hay un cambio más nuevo sin subir
+      if (row.deleted || !row.data) {
+        await db.delRaw(row.store, row.id);
+        if (row.store === 'docs') await db.delRaw('files', row.id);
+      } else await db.putRaw(row.store, row.data);
+      changed.add(row.store === 'marks' ? (row.data?.docId || '*') : row.store === 'docs' ? row.id : '*');
+      changed.add('*');
+    }
+    since = data[data.length - 1].updated_at;
+    localStorage.setItem(lastKey(), since);
+    if (data.length < 500) break;
+  }
+  return changed;
+}
+// Mostrar lo que ha llegado de otro dispositivo
+async function applyRemoteToUI(changed) {
+  if (!$('#library').hidden) { renderLibrary(); return; }
+  if (!R.doc) return;
+  if (changed.has(R.doc.id) && !ED?.m && !corrEd) {
+    const fresh = await db.get('docs', R.doc.id);
+    if (!fresh) return;
+    R.marks = await db.marksOf(R.doc.id);
+    for (const p of R.pages) { drawMarks(p.num); renderSheet(p.num); }
+    for (const k of ['read', 'lang', 'name', 'desc']) R.doc[k] = fresh[k];
+    updateProgress(); for (const p of R.pages) refreshReadUI(p.num);
+  }
+}
+// Borrar todo lo guardado en este dispositivo (al cerrar sesión o cambiar de usuario)
+async function wipeLocal() {
+  for (const s of ['docs', 'files', 'marks', 'folders', 'outbox']) await db.clear(s);
+  LIB.folderId = null; localStorage.removeItem('study-folder');
+}
+async function localCount() { return (await db.count('docs')) + (await db.count('folders')); }
+// Al entrar: decidir qué hacer con lo que ya había en este dispositivo
+async function adoptLocalData() {
+  const owner = localStorage.getItem(ownerKey);
+  if (owner === SYNC.uid) return;
+  const n = await localCount();
+  if (owner && owner !== SYNC.uid) await wipeLocal(); // datos de otra cuenta: no se mezclan
+  else if (n) {
+    const docs = (await db.getAll('docs')).length;
+    const up = await askChoice({
+      title: 'Documentos de este dispositivo',
+      text: `En este dispositivo hay ${docs} documento${docs === 1 ? '' : 's'} guardado${docs === 1 ? '' : 's'} sin cuenta. ¿Quieres subirlos a tu cuenta para tenerlos en todos tus dispositivos?`,
+      ok: 'Subirlos a mi cuenta', cancel: 'No, quitarlos de aquí',
+    });
+    if (up) {
+      busy(true, 'Preparando la subida…');
+      for (const s of ['folders', 'docs', 'marks']) for (const v of await db.getAll(s)) await syncQueue(s, v.id, 'put');
+      for (const id of await db.keys('files')) await syncQueue('files', id, 'put');
+      busy(false);
+    } else await wipeLocal();
+  }
+  localStorage.setItem(ownerKey, SYNC.uid);
+}
+function askChoice({ title, text, ok, cancel }) {
+  return new Promise((resolve) => {
+    const dlg = h('dialog', { class: 'name-dialog' },
+      h('form', { method: 'dialog' }, h('h3', {}, title), h('p', {}, text),
+        h('div', { class: 'dialog-actions' },
+          h('button', { class: 'btn ghost', value: 'no', type: 'submit' }, cancel),
+          h('button', { class: 'btn primary', value: 'ok', type: 'submit' }, ok))));
+    dlg.addEventListener('cancel', (e) => e.preventDefault());
+    document.body.append(dlg);
+    dlg.addEventListener('close', () => { dlg.remove(); resolve(dlg.returnValue === 'ok'); });
+    dlg.showModal();
+  });
+}
+
+/* ---------- Pantalla de acceso ---------- */
+function authMsg(text, kind = '') { const m = $('#authMsg'); m.textContent = text || ''; m.className = `auth-msg ${kind}`; m.hidden = !text; }
+function showAuth(mode = 'login') {
+  const v = $('#auth');
+  v.hidden = false; v.dataset.mode = mode;
+  $('#authTitle').textContent = mode === 'password' ? 'Elige tu contraseña' : mode === 'forgot' ? 'Recuperar la contraseña' : 'Iniciar sesión';
+  $('#authSub').textContent = mode === 'password' ? 'Escribe la contraseña que usarás para entrar en Study App.'
+    : mode === 'forgot' ? 'Te enviaremos un correo con un enlace para elegir una contraseña nueva.'
+      : 'Entra para tener tus documentos y notas en todos tus dispositivos.';
+  authMsg('');
+  setTimeout(() => (mode === 'password' ? $('#authPass') : $('#authEmail')).focus(), 50);
+}
+function hideAuth() { $('#auth').hidden = true; }
+async function authSubmit(e) {
+  e.preventDefault();
+  const mode = $('#auth').dataset.mode;
+  const email = $('#authEmail').value.trim(), pass = $('#authPass').value, pass2 = $('#authPass2').value;
+  const btn = $('#authGo'); btn.disabled = true;
+  try {
+    if (mode === 'login') {
+      if (!email || !pass) { authMsg('Escribe tu correo y tu contraseña.', 'err'); return; }
+      authMsg('Entrando…');
+      const { error } = await SYNC.sb.auth.signInWithPassword({ email, password: pass });
+      if (error) { authMsg(/invalid/i.test(error.message) ? 'Correo o contraseña incorrectos.' : `No se pudo entrar: ${error.message}`, 'err'); return; }
+      $('#authPass').value = '';
+    } else if (mode === 'forgot') {
+      if (!email) { authMsg('Escribe tu correo.', 'err'); return; }
+      const { error } = await SYNC.sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+      if (error) { authMsg(`No se pudo enviar: ${error.message}`, 'err'); return; }
+      authMsg('Si ese correo tiene cuenta, te llegará un enlace en unos minutos. Ábrelo en este dispositivo.', 'ok');
+    } else if (mode === 'password') {
+      if (pass.length < 8) { authMsg('La contraseña debe tener al menos 8 caracteres.', 'err'); return; }
+      if (pass !== pass2) { authMsg('Las dos contraseñas no coinciden.', 'err'); return; }
+      const { error } = await SYNC.sb.auth.updateUser({ password: pass });
+      if (error) { authMsg(`No se pudo guardar: ${error.message}`, 'err'); return; }
+      $('#authPass').value = ''; $('#authPass2').value = '';
+      hideAuth(); toast('Contraseña guardada');
+      await afterSignIn();
+    }
+  } finally { btn.disabled = false; }
+}
+function afterSignIn() {
+  // puede llamarse varias veces seguidas (eventos de Supabase): una sola a la vez
+  SYNC.signing ||= doAfterSignIn().finally(() => { SYNC.signing = null; });
+  return SYNC.signing;
+}
+async function doAfterSignIn() {
+  const { data } = await SYNC.sb.auth.getUser();
+  const user = data?.user;
+  if (!user) return;
+  const first = SYNC.uid !== user.id;
+  SYNC.uid = user.id; SYNC.email = user.email;
+  localStorage.removeItem('study-local-only');
+  hideAuth();
+  if (first) {
+    await adoptLocalData();
+    await renderLibrary();
+    updateAccountUI();
+    runSync();
+  }
+}
+async function signOut() {
+  if (SYNC.uid) {
+    await runSync();
+    const pending = await db.count('outbox');
+    if (pending && !confirm(`Hay ${pending} cambio${pending > 1 ? 's' : ''} sin subir a la nube (¿sin conexión?). Si cierras sesión ahora se perderán.\n\n¿Cerrar sesión igualmente?`)) return;
+  }
+  busy(true, 'Cerrando sesión…');
+  try {
+    if (R.doc) closeReader();
+    await SYNC.sb.auth.signOut().catch(() => {});
+    await wipeLocal();
+    localStorage.removeItem(ownerKey);
+    SYNC.uid = null; SYNC.email = null; SYNC.last = 0;
+    await renderLibrary();
+  } finally { busy(false); }
+  updateAccountUI();
+  showAuth('login');
+}
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'hace un momento' : s < 3600 ? `hace ${Math.round(s / 60)} min` : `hace ${Math.round(s / 3600)} h`; };
+function updateAccountUI() {
+  const b = $('#btnAccount');
+  if (!b) return;
+  b.hidden = !SYNC.on;
+  const st = !SYNC.uid ? 'out' : SYNC.running ? 'busy' : SYNC.error === 'offline' ? 'offline' : SYNC.error ? 'err' : SYNC.pending ? 'pending' : 'ok';
+  b.dataset.state = st;
+  b.title = !SYNC.uid ? 'Iniciar sesión' : `${SYNC.email} · ${{ busy: 'Sincronizando…', offline: 'Sin conexión: los cambios se subirán al volver', err: `Error al sincronizar: ${SYNC.error}`, pending: 'Cambios pendientes de subir', ok: SYNC.last ? `Sincronizado ${ago(SYNC.last)}` : 'Sincronizado' }[st]}`;
+  $('#accountLbl').textContent = SYNC.uid ? 'Cuenta' : 'Entrar';
+}
+function accountMenu(anchor) {
+  if (!SYNC.uid) { showAuth('login'); return; }
+  const st = $('#btnAccount').title.split(' · ').slice(1).join(' · ');
+  showMenu(anchor, [
+    { label: SYNC.email, icon: ICON.user, fn: () => {} },
+    { label: st, icon: ICON.cloud, fn: () => {} },
+    { label: 'Sincronizar ahora', icon: ICON.restore, fn: () => runSync() },
+    { label: 'Cambiar contraseña', icon: ICON.edit, fn: () => showAuth('password') },
+    { label: 'Cerrar sesión', icon: ICON.logout, danger: true, fn: () => signOut() },
+  ]);
+}
+async function initAccounts() {
+  updateAccountUI();
+  if (!SYNC.on) return;
+  // enlaces de invitación o de recuperación: después de entrar hay que elegir contraseña
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const needPassword = ['invite', 'recovery'].includes(hash.get('type'));
+  const linkError = hash.get('error_description');
+  try {
+    await loadScript('./vendor/supabase.js');
+    SYNC.sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' } });
+  } catch (e) { console.warn(e); SYNC.on = false; updateAccountUI(); return; }
+  SYNC.sb.auth.onAuthStateChange((ev) => {
+    if (ev === 'PASSWORD_RECOVERY') setTimeout(() => showAuth('password'), 0);
+    if (ev === 'SIGNED_IN' || ev === 'TOKEN_REFRESHED') setTimeout(() => afterSignIn(), 0);
+  });
+  const { data } = await SYNC.sb.auth.getSession();
+  if (location.hash.includes('access_token') || linkError) history.replaceState(null, '', location.pathname);
+  if (data?.session) {
+    await afterSignIn();
+    if (needPassword) showAuth('password');
+  } else if (!localStorage.getItem('study-local-only')) {
+    showAuth('login');
+    if (linkError) authMsg(`El enlace no es válido o ha caducado (${linkError}). Pide otra invitación o usa «¿Has olvidado la contraseña?».`, 'err');
+  }
+  // sincronizar al volver a la app, al recuperar la conexión y cada minuto
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleSync(200); });
+  window.addEventListener('online', () => scheduleSync(200));
+  window.addEventListener('offline', () => { SYNC.error = 'offline'; updateAccountUI(); });
+  setInterval(() => { if (!document.hidden) runSync(); }, 60000);
+}
+function initAuthUI() {
+  $('#authForm').addEventListener('submit', authSubmit);
+  $('#authForgot').addEventListener('click', () => showAuth('forgot'));
+  $('#authBack').addEventListener('click', () => showAuth('login'));
+  $('#authLocal').addEventListener('click', () => { localStorage.setItem('study-local-only', '1'); hideAuth(); });
+  $('#btnAccount').addEventListener('click', (e) => accountMenu(e.currentTarget));
+}
+
+/* =========================================================
    Eventos
    ========================================================= */
 function init() {
   buildTagRow();
   initFind();
+  initAuthUI();
   $('#fileInput').addEventListener('change', (e) => { importFiles(e.target.files); e.target.value = ''; });
   $('#btnBack').addEventListener('click', () => closeReader());
   $('#modeText').addEventListener('click', () => setMode('text'));
@@ -3221,6 +3552,7 @@ function init() {
     const m = location.hash.match(/^#doc=(.+)$/);
     if (m) db.get('docs', m[1]).then((d) => d && live(d) && openDoc(d.id));
   });
+  initAccounts();
 
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW', e));
