@@ -1135,7 +1135,7 @@ async function openDoc(id) {
     resetFind();
     await buildPages();
     updateProgress();
-    scrollToPage(doc.lastPage || 1, false);
+    openAtStartPage(doc);
     history.pushState({ doc: id }, '', `#doc=${id}`);
     // Si el documento se importó antes de tener recuento de texto, calcularlo ahora
     if (!doc.pageChars || doc.pageChars.length !== R.pdf.numPages) computeCharsInBackground();
@@ -1623,10 +1623,33 @@ function releasePage(p) {
   p.rendered = false; p.rendering = false;
 }
 
+// Al abrir: por la última página marcada como leída (si no hay ninguna, por donde se dejó)
+async function openAtStartPage(doc) {
+  const read = (doc.read || []).filter((n) => n >= 1 && n <= R.pages.length);
+  const num = read.length ? Math.max(...read) : (doc.lastPage || 1);
+  scrollToPage(num, false);
+  // las hojas de notas de las páginas anteriores se dibujan un poco después y empujan
+  // el contenido hacia abajo: volver a colocar la página (si el usuario no se ha movido)
+  let userMoved = false;
+  const moved = () => { userMoved = true; };
+  const evs = ['wheel', 'touchmove', 'keydown', 'pointerdown'];
+  evs.forEach((e) => window.addEventListener(e, moved, { passive: true }));
+  const html = document.documentElement;
+  html.style.overflowAnchor = 'none';
+  try {
+    const R0 = R.doc;
+    await R.sheetsReady;
+    await new Promise((r) => requestAnimationFrame(r));
+    if (!userMoved && R.doc === R0) scrollToPage(num, false);
+  } finally {
+    evs.forEach((e) => window.removeEventListener(e, moved));
+    html.style.overflowAnchor = '';
+  }
+}
 function scrollToPage(num, smooth = true) {
   const p = R.pages[num - 1];
   if (!p) return;
-  const top = p.block.getBoundingClientRect().top + window.scrollY - 70;
+  const top = p.block.getBoundingClientRect().top + window.scrollY - (document.querySelector('#reader .topbar')?.offsetHeight || 60) - 8;
   window.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
 }
 
@@ -2063,7 +2086,7 @@ async function openEditor(m) {
     // a la derecha: «Resultado» (LaTeX compilado) o «Documento» (las páginas del PDF)
     const resultLabel = h('button', { type: 'button', class: 'te-tab', role: 'tab' });
     const docTab = h('button', { type: 'button', class: 'te-tab', role: 'tab' });
-    const resultScroll = h('div', { class: 'te-scroll' }, quote, paper);
+    const resultScroll = h('div', { class: 'te-scroll' }, paper); // el fragmento ya se ve en la pestaña «Documento»
     const docView = h('div', { class: 'te-docview', hidden: true });
     resultLabel.addEventListener('click', () => setEdView('result'));
     docTab.addEventListener('click', () => setEdView('doc'));
@@ -2112,9 +2135,6 @@ async function openEditor(m) {
   const idx = noteMarksOfPage(m.page).indexOf(m);
   ED.title.replaceChildren(h('span', { class: 'num', style: { background: t.color } }, String(idx + 1)),
     h('b', {}, T('comment')), h('span', { class: 'te-sub' }, ` · ${T('page')} ${m.page} · ${tagName(t)}`));
-  await ensureImageSizes([m]);
-  ED.quote.replaceChildren(m.image ? editorImg(m) : h('blockquote', {}, m.text || ''));
-  ED.quote.style.setProperty('--c', t.color);
   ED.root.hidden = false;
   document.body.classList.add('editing');
   ED.cm.setValue(commentSource(m));
