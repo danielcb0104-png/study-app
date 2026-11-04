@@ -1403,6 +1403,7 @@ async function buildPages() {
   container.replaceChildren();
   R.observer?.disconnect(); R.visObserver?.disconnect();
   R.pages = [];
+  visRatios.clear();
   const n = R.pdf.numPages;
   // Tamaños de todas las páginas
   for (let i = 1; i <= n; i++) {
@@ -1444,7 +1445,9 @@ async function buildPages() {
     R.visObserver.observe(p.el);
   }
   container.append(frag);
-  for (const p of R.pages) { refreshReadUI(p.num); drawMarks(p.num); renderSheet(p.num); }
+  const sheets = [];
+  for (const p of R.pages) { refreshReadUI(p.num); drawMarks(p.num); sheets.push(renderSheet(p.num)); }
+  R.sheetsReady = Promise.all(sheets).catch(() => {}); // las hojas de notas se dibujan después (MathJax)
   mmBuild();
 }
 
@@ -1634,22 +1637,61 @@ function zoomStep(dir) {
   const next = dir > 0 ? (Math.floor(t / 10) + 1) * 10 : (Math.ceil(t / 10) - 1) * 10;
   return setZoom(next / 100);
 }
+// Punto del documento que se está leyendo (página u hoja de notas + posición dentro de ella)
+function captureAnchor() {
+  const y = (document.querySelector('#reader .topbar')?.offsetHeight || 60) + 12;
+  let last = null;
+  for (const p of R.pages) {
+    const els = [['page', 0, p.el], ...[...(p.sheetHolder?.querySelectorAll('.sheet') || [])].map((sh, i) => ['sheet', i, sh])];
+    for (const [kind, idx, el] of els) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom <= y) { last = { num: p.num, kind, idx, frac: 1, y }; continue; }
+      return { num: p.num, kind, idx, frac: r.top >= y ? 0 : (y - r.top) / r.height, y };
+    }
+  }
+  return last;
+}
+function anchorEl(a) {
+  const p = R.pages[a.num - 1];
+  if (!p) return null;
+  return a.kind === 'page' ? p.el : (p.sheetHolder?.querySelectorAll('.sheet')[a.idx] || null);
+}
+function restoreAnchor(a) {
+  if (!a) return null;
+  let el = anchorEl(a), frac = a.frac;
+  if (!el) { el = R.pages[a.num - 1]?.el; frac = 1; } // la hoja aún no está: al final de su página
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const top = r.top + scrollY + frac * r.height - a.y;
+  window.scrollTo({ top, behavior: 'instant' });
+  return scrollY;
+}
 async function setZoom(z) {
   z = Math.max(0.5, Math.min(4, Math.round(z * 100) / 100));
   if (!R.doc || z === R.doc.zoom) return;
-  const current = R.doc.lastPage || 1;
-  // posición relativa dentro de la página actual
-  const p = R.pages[current - 1] || R.pages[0];
-  const rect = p?.el?.getBoundingClientRect() || { top: 0, height: 0 };
-  const rel = rect.height ? (70 - rect.top) / rect.height : 0;
+  const anchor = captureAnchor();
   R.doc.zoom = z;
   db.put('docs', R.doc);
-  for (const pg of R.pages) releasePage(pg);
-  await buildPages();
-  const np = R.pages[current - 1] || R.pages[0];
-  if (!np) return;
-  const top = np.el.getBoundingClientRect().top + window.scrollY - 70 + rel * np.el.offsetHeight;
-  window.scrollTo({ top, behavior: 'instant' });
+  // mientras se recoloca, el navegador no debe «anclar» el desplazamiento por su cuenta
+  const html = document.documentElement;
+  html.style.overflowAnchor = 'none';
+  let userMoved = false;
+  const moved = () => { userMoved = true; };
+  const evs = ['wheel', 'touchmove', 'keydown', 'pointerdown'];
+  evs.forEach((e) => window.addEventListener(e, moved, { passive: true }));
+  try {
+    for (const pg of R.pages) releasePage(pg);
+    await buildPages();
+    restoreAnchor(anchor);
+    // cuando terminan de dibujarse las hojas de notas, todo se desplaza: volver al mismo sitio
+    // (salvo que el usuario ya se haya movido)
+    await R.sheetsReady;
+    await new Promise((r) => requestAnimationFrame(r));
+    if (!userMoved) restoreAnchor(anchor);
+  } finally {
+    evs.forEach((e) => window.removeEventListener(e, moved));
+    html.style.overflowAnchor = '';
+  }
 }
 
 /* ---------- Páginas leídas y progreso ---------- */
