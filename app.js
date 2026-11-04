@@ -3214,12 +3214,22 @@ function mmLayout() {
       const c = tagById(m.tag).color;
       for (const [x, y, w, hh] of m.rects) pg.append(h('i', { class: 'mm-mark', style: { left: `${x * 100}%`, top: `${y * 100}%`, width: `${Math.max(w * 100, 2)}%`, height: `${Math.max(hh * 100, 0.6)}%`, background: c } }));
     }
+    for (const m of corrMarksOfPage(p.num)) {
+      const c = m.corr;
+      pg.append(h('i', { class: 'mm-corr', style: { left: `${c.x * 100}%`, top: `${c.y * 100}%`, width: `${c.w * 100}%`, height: `${Math.max(c.h * 100, 0.8)}%` } }));
+    }
     if (p.el.classList.contains('read')) pg.classList.add('read');
     frag.append(pg);
     let bottom = b.top + b.h;
     for (const sh of p.sheetHolder?.querySelectorAll('.sheet') || []) {
       const sb = box(sh);
-      frag.append(h('div', { class: 'mm-sheet', title: `Notas · página ${p.num}`, style: { top: `${sb.top}px`, height: `${sb.h}px`, width: `${sb.w}px`, left: `${sb.left}px` } }));
+      // copia de la hoja de notas, reducida a escala (se ve su contenido real)
+      const clone = sh.cloneNode(true);
+      clone.classList.add('mm-sheet-clone');
+      clone.querySelectorAll('[id]').forEach((x) => x.removeAttribute('id'));
+      clone.querySelectorAll('.flash').forEach((x) => x.classList.remove('flash'));
+      Object.assign(clone.style, { width: `${sh.offsetWidth}px`, height: `${sh.offsetHeight}px`, transform: `scale(${s})` });
+      frag.append(h('div', { class: 'mm-sheet', title: `Notas · página ${p.num}`, style: { top: `${sb.top}px`, height: `${sb.h}px`, width: `${sb.w}px`, left: `${sb.left}px` } }, clone));
       bottom = sb.top + sb.h;
     }
     // la línea de leído cubre la página y sus hojas de notas
