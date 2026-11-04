@@ -332,7 +332,7 @@ async function renderLibrary() {
       showMenu(more, [
         { label: 'Mover a carpeta…', icon: ICON.move, fn: () => moveItem({ type: 'doc', id: d.id }) },
         { label: 'Fusionar con otros…', icon: ICON.merge, fn: () => mergeDialog([d.id]) },
-        ...(d.pageCount > 1 ? [{ label: 'Fisionar (separar en dos)…', icon: ICON.split, fn: () => splitDialog(d.id) }] : []),
+        ...(d.pageCount > 1 ? [{ label: 'Fisionar (separar en partes)…', icon: ICON.split, fn: () => splitDialog(d.id) }] : []),
         { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameDoc(d) },
         { label: d.desc ? 'Editar descripción' : 'Añadir descripción', icon: ICON.note, fn: () => editDescription('docs', d.id) },
         { label: 'Mover a la papelera', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
@@ -651,22 +651,35 @@ async function splitDialog(preId = null) {
   const where = (d) => folderPath(folders, d.folderId || null).map((f) => f.name).join(' › ') || 'Biblioteca';
   docs.sort((a, b) => where(a).localeCompare(where(b), 'es') || byName(a, b));
   let doc = docs.find((d) => d.id === preId) || null;
-  let cut = 2; // primera página de la segunda parte
-  let pdfP = null, pdfFor = null, thumbT = null;
+  let parts = 2;        // en cuántos documentos
+  let cuts = [];        // primera página de las partes 2, 3, …
+  let cutsFor = null, namesFor = null, names = [];
+  let pdfP = null, pdfFor = null;
   let step = doc ? 2 : 1;
+  const MAXPARTS = 50;
   const title = h('h3'), sub = h('p', { class: 'merge-sub' }), content = h('div', { class: 'merge-body' });
   const back = h('button', { type: 'button', class: 'btn ghost' });
   const next = h('button', { type: 'button', class: 'btn primary' });
-  const name1 = h('input', { type: 'text', class: 'name-input', maxlength: '120' });
-  const name2 = h('input', { type: 'text', class: 'name-input', maxlength: '120' });
-  let namesFor = null;
   const dlg = h('dialog', { class: 'merge-dialog split-dialog' },
     h('form', { method: 'dialog', onsubmit: (e) => e.preventDefault() }, title, sub, content, h('div', { class: 'dialog-actions' }, back, next)));
   const range = (a, b) => (a === b ? `pág. ${a}` : `págs. ${a}–${b}`);
+  const maxParts = () => Math.min(MAXPARTS, doc.pageCount);
+  const ranges = () => { const st = [1, ...cuts], n = doc.pageCount; return st.map((a, k) => [a, k + 1 < st.length ? st[k + 1] - 1 : n]); };
+  // cortes repartidos por igual
+  const evenCuts = () => Array.from({ length: parts - 1 }, (_, k) => Math.round(1 + ((k + 1) * doc.pageCount) / parts));
+  // que cada corte quede después del anterior y deje sitio a los siguientes
+  const fixCuts = (from = -1) => {
+    const n = doc.pageCount, m = cuts.length;
+    for (let k = 0; k < m; k++) cuts[k] = Math.min(Math.max(cuts[k] | 0, 2 + k), n - (m - 1 - k));
+    for (let k = Math.max(0, from + 1); k < m; k++) if (cuts[k] <= cuts[k - 1]) cuts[k] = cuts[k - 1] + 1;
+    for (let k = Math.min(m - 1, from) - 1; k >= 0; k--) if (cuts[k] >= cuts[k + 1]) cuts[k] = cuts[k + 1] - 1;
+    for (let k = 0; k < m; k++) cuts[k] = Math.min(Math.max(cuts[k], 2 + k), n - (m - 1 - k));
+  };
+  const fixedBack = () => (preId && doc?.id === preId ? 'Cancelar' : 'Atrás');
 
   const drawPick = () => {
     title.textContent = 'Fisionar un documento';
-    sub.textContent = 'Elige el documento que quieres separar en dos. Sus notas se repartirán entre las dos partes.';
+    sub.textContent = 'Elige el documento que quieres separar. Sus notas se repartirán entre las partes.';
     const list = h('div', { class: 'folder-list merge-list', role: 'radiogroup' });
     let lastWhere = null;
     for (const d of docs) {
@@ -682,7 +695,35 @@ async function splitDialog(preId = null) {
     back.textContent = 'Cancelar'; next.textContent = 'Siguiente'; next.disabled = !doc;
   };
 
-  // el PDF se carga una sola vez (aunque se pidan dos miniaturas a la vez)
+  // Paso 2: en cuántos documentos
+  const drawCount = () => {
+    parts = Math.min(Math.max(parts, 2), maxParts());
+    title.textContent = '¿En cuántos documentos lo separo?';
+    sub.textContent = `«${doc.name}» tiene ${doc.pageCount} páginas. Puedes separarlo en hasta ${maxParts()} documentos.`;
+    const num = h('input', { type: 'number', class: 'name-input split-num', min: '2', max: String(maxParts()), value: String(parts), inputmode: 'numeric' });
+    const minus = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Menos' }, svgIcon('<path d="M6 12h12"/>'));
+    const plus = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Más' }, svgIcon('<path d="M12 6v12M6 12h12"/>'));
+    const hint = h('p', { class: 'merge-note' });
+    const set = (v, typing = false) => {
+      const x = parseInt(v, 10);
+      if (typing && Number.isNaN(x)) return;
+      parts = Math.min(Math.max(Number.isNaN(x) ? 2 : x, 2), maxParts());
+      if (!typing || String(parts) !== num.value) num.value = String(parts);
+      minus.disabled = parts <= 2; plus.disabled = parts >= maxParts();
+      hint.textContent = `Unas ${Math.round(doc.pageCount / parts)} páginas por documento si se reparte por igual. En el paso siguiente eliges dónde empieza cada uno.`;
+    };
+    num.addEventListener('input', () => set(num.value, true));
+    num.addEventListener('change', () => set(num.value));
+    num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); set(num.value); next.click(); } });
+    minus.addEventListener('click', () => set(parts - 1));
+    plus.addEventListener('click', () => set(parts + 1));
+    content.replaceChildren(h('label', { class: 'name-label' }, 'Número de documentos'), h('div', { class: 'split-count' }, minus, num, plus), hint);
+    set(parts);
+    back.textContent = fixedBack(); next.textContent = 'Siguiente'; next.disabled = false;
+    setTimeout(() => { num.focus(); num.select(); }, 0);
+  };
+
+  // el PDF se carga una sola vez (aunque se pidan varias miniaturas a la vez)
   const getPdf = () => {
     if (pdfFor !== doc.id) {
       const old = pdfP; pdfFor = doc.id;
@@ -694,12 +735,12 @@ async function splitDialog(preId = null) {
     }
     return pdfP;
   };
-  const thumb = async (canvas, num) => {
+  const thumb = async (canvas, num, w = 90) => {
     const tok = (canvas._tok = (canvas._tok || 0) + 1);
     try {
       const page = await (await getPdf()).getPage(num);
       const v0 = page.getViewport({ scale: 1 });
-      const v = page.getViewport({ scale: (120 * (window.devicePixelRatio || 1)) / v0.width });
+      const v = page.getViewport({ scale: (w * (window.devicePixelRatio || 1)) / v0.width });
       const off = document.createElement('canvas');
       off.width = Math.round(v.width); off.height = Math.round(v.height);
       await page.render({ canvasContext: off.getContext('2d'), viewport: v }).promise;
@@ -708,83 +749,92 @@ async function splitDialog(preId = null) {
       canvas.getContext('2d').drawImage(off, 0, 0);
     } catch (e) { console.warn(e); }
   };
-  const drawCut = () => {
+
+  // Paso 3: dónde empieza cada parte
+  const drawCuts = () => {
     const n = doc.pageCount;
-    cut = Math.min(Math.max(cut, 2), n);
+    const key = `${doc.id}|${parts}`;
+    if (cutsFor !== key) { cuts = evenCuts(); fixCuts(); cutsFor = key; }
     title.textContent = '¿Dónde lo separo?';
-    sub.textContent = `«${doc.name}» tiene ${n} páginas. Elige la página con la que empieza la segunda parte.`;
-    const num = h('input', { type: 'number', class: 'name-input split-num', min: '2', max: String(n), value: String(cut), inputmode: 'numeric' });
-    const slider = h('input', { type: 'range', class: 'split-range', min: '2', max: String(n), value: String(cut) });
-    const c1 = h('canvas'), c2 = h('canvas');
-    const cap1 = h('small'), cap2 = h('small');
+    sub.textContent = `Elige la página con la que empieza cada documento (de 2 a ${parts}). El documento 1 empieza siempre en la página 1.`;
     const summary = h('div', { class: 'split-summary' });
-    const update = (v, from) => {
-      cut = Math.min(Math.max(parseInt(v, 10) || 2, 2), n);
-      if (from !== num) num.value = String(cut);
-      if (from !== slider) slider.value = String(cut);
-      cap1.textContent = `pág. ${cut - 1}`; cap2.textContent = `pág. ${cut}`;
-      summary.replaceChildren(
-        h('div', {}, h('b', {}, 'Parte 1: '), `${range(1, cut - 1)} (${cut - 1})`),
-        h('div', {}, h('b', {}, 'Parte 2: '), `${range(cut, n)} (${n - cut + 1})`));
-      clearTimeout(thumbT);
-      thumbT = setTimeout(() => { thumb(c1, cut - 1); thumb(c2, cut); }, 120);
+    const rows = [];
+    const refreshSummary = () => {
+      summary.replaceChildren(...ranges().map(([a, b], k) => h('div', {}, h('b', {}, `Documento ${k + 1}: `), `${range(a, b)} (${b - a + 1})`)));
     };
-    num.addEventListener('input', () => { if (num.value !== '') update(num.value, num); });
-    num.addEventListener('change', () => update(num.value, null));
-    slider.addEventListener('input', () => update(slider.value, slider));
-    content.replaceChildren(
-      h('label', { class: 'name-label' }, 'Primera página de la segunda parte'),
-      h('div', { class: 'split-pick' }, num, n > 2 ? slider : null),
-      h('div', { class: 'split-preview' },
-        h('figure', {}, c1, h('figcaption', {}, 'Fin de la parte 1 · ', cap1)),
-        h('div', { class: 'split-scissors', 'aria-hidden': 'true' }, '✂'),
-        h('figure', {}, c2, h('figcaption', {}, 'Inicio de la parte 2 · ', cap2))),
-      summary);
-    update(cut, null);
-    back.textContent = preId && step === 2 && doc.id === preId ? 'Cancelar' : 'Atrás';
-    next.textContent = 'Siguiente'; next.disabled = false;
+    const rowFor = (k) => {
+      const num = h('input', { type: 'number', class: 'name-input split-num', min: String(2 + k), max: String(n - (cuts.length - 1 - k)), inputmode: 'numeric', 'aria-label': `Primera página del documento ${k + 2}` });
+      const c1 = h('canvas'), c2 = h('canvas'), cap1 = h('small'), cap2 = h('small');
+      let tT = null;
+      const paint = () => {
+        num.value = String(cuts[k]);
+        cap1.textContent = `pág. ${cuts[k] - 1}`; cap2.textContent = `pág. ${cuts[k]}`;
+        clearTimeout(tT); tT = setTimeout(() => { thumb(c1, cuts[k] - 1); thumb(c2, cuts[k]); }, 150);
+      };
+      const apply = (v) => { const x = parseInt(v, 10); if (Number.isNaN(x)) return; cuts[k] = x; fixCuts(k); rows.forEach((r) => r.paint()); refreshSummary(); };
+      num.addEventListener('change', () => apply(num.value));
+      num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(num.value); } });
+      const minus = h('button', { type: 'button', class: 'icon-btn small', 'aria-label': 'Página anterior' }, svgIcon('<path d="M6 12h12"/>'));
+      const plus = h('button', { type: 'button', class: 'icon-btn small', 'aria-label': 'Página siguiente' }, svgIcon('<path d="M12 6v12M6 12h12"/>'));
+      minus.addEventListener('click', () => apply(cuts[k] - 1));
+      plus.addEventListener('click', () => apply(cuts[k] + 1));
+      const el = h('div', { class: 'split-cut' },
+        h('div', { class: 'split-cut-head' }, h('b', {}, `Documento ${k + 2}`), h('span', {}, 'empieza en la página'), h('span', { class: 'split-cut-ctl' }, minus, num, plus)),
+        h('div', { class: 'split-preview small' },
+          h('figure', {}, c1, h('figcaption', {}, `Fin del ${k + 1} · `, cap1)),
+          h('div', { class: 'split-scissors', 'aria-hidden': 'true' }, '✂'),
+          h('figure', {}, c2, h('figcaption', {}, `Inicio del ${k + 2} · `, cap2))));
+      return { el, paint };
+    };
+    for (let k = 0; k < cuts.length; k++) rows.push(rowFor(k));
+    content.replaceChildren(h('div', { class: 'split-cuts' }, ...rows.map((r) => r.el)), summary);
+    rows.forEach((r) => r.paint()); refreshSummary();
+    back.textContent = 'Atrás'; next.textContent = 'Siguiente'; next.disabled = false;
   };
 
+  // Paso 4: nombres
   const drawNames = () => {
-    const n = doc.pageCount;
-    title.textContent = 'Nombres de los dos documentos';
-    sub.textContent = '¿Cómo quieres que se llamen las dos partes?';
-    const key = `${doc.id}|${cut}`;
-    if (namesFor !== key) { name1.value = `${doc.name} (1)`; name2.value = `${doc.name} (2)`; namesFor = key; }
+    const rg = ranges();
+    title.textContent = `Nombres de los ${parts} documentos`;
+    sub.textContent = '¿Cómo quieres que se llame cada parte?';
+    const key = `${doc.id}|${parts}`;
+    if (namesFor !== key) { names = rg.map((_, k) => `${doc.name} (${k + 1})`); namesFor = key; }
     const err = h('p', { class: 'merge-err', hidden: true }, 'Escribe un nombre para cada documento.');
-    const check = () => { err.hidden = true; next.disabled = !name1.value.trim() || !name2.value.trim(); };
-    name1.oninput = check; name2.oninput = check;
-    name1.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); name2.focus(); name2.select(); } };
-    name2.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); next.click(); } };
+    const inputs = rg.map((_, k) => {
+      const inp = h('input', { type: 'text', class: 'name-input', maxlength: '120', value: names[k] });
+      inp.addEventListener('input', () => { names[k] = inp.value; err.hidden = true; next.disabled = names.some((x) => !x.trim()); });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (k + 1 < rg.length) { inputs[k + 1].focus(); inputs[k + 1].select(); } else next.click(); } });
+      return inp;
+    });
     content.replaceChildren(
-      h('label', { class: 'name-label' }, `Parte 1 · ${range(1, cut - 1)}`), h('div', { class: 'name-row' }, name1),
-      h('label', { class: 'name-label' }, `Parte 2 · ${range(cut, n)}`), h('div', { class: 'name-row' }, name2), err,
-      h('p', { class: 'merge-note' }, `Se guardarán en «${where(doc)}». El documento original no cambia.`));
-    back.textContent = 'Atrás'; next.textContent = 'Crear documentos';
-    check();
-    setTimeout(() => { name1.focus(); name1.select(); }, 0);
+      h('div', { class: 'split-names' }, ...rg.flatMap(([a, b], k) => [h('label', { class: 'name-label' }, `Documento ${k + 1} · ${range(a, b)}`), h('div', { class: 'name-row' }, inputs[k])])),
+      err, h('p', { class: 'merge-note' }, `Se guardarán en «${where(doc)}». El documento original no cambia.`));
+    back.textContent = 'Atrás'; next.textContent = `Crear ${parts} documentos`;
+    next.disabled = names.some((x) => !x.trim());
+    setTimeout(() => { inputs[0].focus(); inputs[0].select(); }, 0);
   };
 
-  const draw = () => (step === 1 ? drawPick() : step === 2 ? drawCut() : drawNames());
+  const draw = () => [drawPick, drawCount, drawCuts, drawNames][step - 1]();
   back.addEventListener('click', () => {
     if (step === 1 || (step === 2 && back.textContent === 'Cancelar')) { dlg.close(); return; }
     step--; draw();
   });
   next.addEventListener('click', async () => {
     if (step === 1) { if (!doc) return; step = 2; draw(); return; }
-    if (step === 2) { step = 3; draw(); return; }
-    const n1 = name1.value.trim().replace(/\s+/g, ' '), n2 = name2.value.trim().replace(/\s+/g, ' ');
-    if (!n1 || !n2) { content.querySelector('.merge-err').hidden = false; return; }
+    if (step < 4) { step++; draw(); return; }
+    const clean = names.map((x) => x.trim().replace(/\s+/g, ' '));
+    if (clean.some((x) => !x)) { content.querySelector('.merge-err').hidden = false; return; }
     dlg.close();
-    await splitDoc(doc.id, cut, [n1, n2]);
+    await splitDoc(doc.id, [...cuts], clean);
   });
-  dlg.addEventListener('close', () => { clearTimeout(thumbT); pdfP?.then((x) => x.destroy()).catch(() => {}); dlg.remove(); });
+  dlg.addEventListener('close', () => { pdfP?.then((x) => x.destroy()).catch(() => {}); dlg.remove(); });
   document.body.append(dlg);
   draw();
   dlg.showModal();
 }
 
-async function splitDoc(id, cut, names) {
+// Separa el documento en varias partes: cuts = primera página de las partes 2, 3, …
+async function splitDoc(id, cuts, names) {
   busy(true, 'Fisionando el documento…');
   try {
     const { PDFDocument } = await loadPdfLib();
@@ -792,12 +842,13 @@ async function splitDoc(id, cut, names) {
     if (!doc || !file) throw new Error('Documento no encontrado');
     const src = await PDFDocument.load(file.data.slice(0), { ignoreEncryption: true });
     const n = src.getPageCount();
-    if (cut < 2 || cut > n) throw new Error('Página de separación no válida');
+    const starts = [1, ...cuts];
+    if (starts.some((a, k) => a < 1 || a > n || (k && a <= starts[k - 1]))) throw new Error('Páginas de separación no válidas');
+    const parts = starts.map((a, k) => [a, k + 1 < starts.length ? starts[k + 1] - 1 : n]);
     const allMarks = await db.marksOf(id);
-    const parts = [[1, cut - 1], [cut, n]];
     const created = [];
     for (const [k, [a, b]] of parts.entries()) {
-      busy(true, `Fisionando el documento… (${k + 1}/2)`);
+      busy(true, `Fisionando el documento… (${k + 1}/${parts.length})`);
       const out = await PDFDocument.create();
       const pages = await out.copyPages(src, Array.from({ length: b - a + 1 }, (_, i) => a - 1 + i));
       pages.forEach((pg) => out.addPage(pg));
@@ -823,7 +874,7 @@ async function splitDoc(id, cut, names) {
     }
     busy(false);
     await renderLibrary();
-    toast(`Creados ${created.join(' y ')}`);
+    toast(created.length <= 3 ? `Creados ${created.join(', ').replace(/, ([^,]*)$/, ' y $1')}` : `Creados ${created.length} documentos`);
   } catch (err) {
     console.error(err);
     busy(false);

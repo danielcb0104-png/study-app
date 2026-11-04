@@ -625,3 +625,15 @@ body.has-minimap #reader .pages { padding-right: 130px; }
 .search-split .search-main { border-radius: 9px 0 0 9px; padding-right: 8px; }
 .search-split .search-more { border-radius: 0 9px 9px 0; padding: 7px 6px; margin-left: 1px; }
 @media (prefers-color-scheme: dark) { .tag-btn.tag-search { color: #8fb8f0; } }
+
+/* Fisionar en varias partes */
+.split-count { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.split-count .split-num { width: 90px !important; font-size: 18px; }
+.split-cuts { display: grid; gap: 10px; max-height: min(48vh, 440px); overflow: auto; padding: 2px; margin-bottom: 12px; }
+.split-cut { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--surface); }
+.split-cut-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; margin-bottom: 8px; }
+.split-cut-ctl { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+.split-cut-ctl .split-num { width: 70px !important; padding: 6px 8px; }
+.split-preview.small { padding: 8px; margin: 0; gap: 8px; }
+.split-preview.small canvas { width: 90px; max-height: 128px; }
+.split-names { max-height: min(46vh, 420px); overflow: auto; padding: 2px 2px 0; }
