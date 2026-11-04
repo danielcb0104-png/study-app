@@ -615,3 +615,13 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 body.has-minimap #reader .pages { padding-right: 130px; }
 @media (max-width: 720px) { .minimap { display: none !important; } }
 .minimap[hidden] { display: none; }
+
+/* Buscar en internet (popup de marcado) */
+.search-split { display: inline-flex; }
+.search-split[hidden], .tag-sep[hidden] { display: none; }
+.tag-btn.tag-search { background: color-mix(in srgb, #3b82d6 12%, var(--surface)); color: #2a64b0; }
+.tag-btn.tag-search:hover { background: color-mix(in srgb, #3b82d6 24%, var(--surface)); }
+.tag-btn.tag-search svg { width: 15px; height: 15px; }
+.search-split .search-main { border-radius: 9px 0 0 9px; padding-right: 8px; }
+.search-split .search-more { border-radius: 0 9px 9px 0; padding: 7px 6px; margin-left: 1px; }
+@media (prefers-color-scheme: dark) { .tag-btn.tag-search { color: #8fb8f0; } }

@@ -39,6 +39,7 @@ const I18N = {
     editTip: 'Escribir / editar comentario (LaTeX)', upTip: 'Ver en la página', delTip: 'Eliminar nota', bodyTip: 'Pulsa para editar (LaTeX)',
     tags: { imp: 'Importante', def: 'Definición', obs: 'Observación', ej: 'Ejemplo', com: 'Comentario', cor: 'Corregir', duda: 'Duda', idea: 'Idea' },
     corrPh: 'Escribe la corrección…', corrHint: 'Intro: guardar · Mayús+Intro: nueva línea', save: 'Guardar', removeMark: 'Quitar la marca', corrTip: 'Pulsa para editar la corrección', corrBtnTip: 'Marcar en rojo y escribir la corrección al margen',
+    searchIn: 'Buscar en', searchMore: 'Elegir dónde buscar', scholar: 'Google Académico', dict: 'Diccionario (RAE)',
   },
   ca: {
     notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
@@ -51,6 +52,7 @@ const I18N = {
     editTip: 'Escriure / editar el comentari (LaTeX)', upTip: 'Veure a la pàgina', delTip: 'Eliminar la nota', bodyTip: 'Fes clic per editar (LaTeX)',
     tags: { imp: 'Important', def: 'Definició', obs: 'Observació', ej: 'Exemple', com: 'Comentari', cor: 'Corregir', duda: 'Dubte', idea: 'Idea' },
     corrPh: 'Escriu la correcció…', corrHint: 'Retorn: desar · Maj+Retorn: línia nova', save: 'Desa', removeMark: 'Treure la marca', corrTip: 'Fes clic per editar la correcció', corrBtnTip: 'Marcar en vermell i escriure la correcció al marge',
+    searchIn: 'Cerca a', searchMore: 'Triar on cercar', scholar: 'Google Acadèmic', dict: 'Diccionari (DIEC)',
   },
   en: {
     notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
@@ -63,6 +65,7 @@ const I18N = {
     editTip: 'Write / edit comment (LaTeX)', upTip: 'Show on the page', delTip: 'Delete note', bodyTip: 'Click to edit (LaTeX)',
     tags: { imp: 'Important', def: 'Definition', obs: 'Remark', ej: 'Example', com: 'Comment', cor: 'Correct', duda: 'Question', idea: 'Idea' },
     corrPh: 'Type the correction…', corrHint: 'Enter: save · Shift+Enter: new line', save: 'Save', removeMark: 'Remove mark', corrTip: 'Click to edit the correction', corrBtnTip: 'Mark in red and write the correction in the margin',
+    searchIn: 'Search on', searchMore: 'Choose where to search', scholar: 'Google Scholar', dict: 'Dictionary (Cambridge)',
   },
 };
 const docLang = () => (I18N[R.doc?.lang] ? R.doc.lang : 'es');
@@ -175,6 +178,8 @@ const ICON = {
   user: '<circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20a7.5 7.5 0 0115 0"/>',
   cloud: '<path d="M7 18.5h10.5a4 4 0 00.6-7.95A6 6 0 006.6 9.2 4.7 4.7 0 007 18.5z"/>',
   logout: '<path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  chevDown: '<path d="M7 10l5 5 5-5"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -2267,6 +2272,10 @@ function showPopup(x, y, data) {
   const editing = !!data.edit;
   $('#tagRemove').hidden = !editing;
   pop.querySelectorAll('.tag-btn[data-tag]').forEach((b) => b.classList.toggle('current', editing && b.dataset.tag === data.edit.tag));
+  // buscar en internet solo si hay texto (no en recuadros de imagen)
+  const hasText = !!searchText(data);
+  pop.querySelector('.search-split')?.toggleAttribute('hidden', !hasText);
+  pop.querySelector('.search-sep')?.toggleAttribute('hidden', !hasText);
   pop.hidden = false;
   const pw = pop.offsetWidth, ph = pop.offsetHeight;
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -2276,6 +2285,33 @@ function showPopup(x, y, data) {
   pop.style.left = `${left}px`; pop.style.top = `${top}px`;
 }
 function hidePopup() { $('#tagPopup').hidden = true; pending = null; }
+/* ---------- Buscar en internet el fragmento seleccionado ---------- */
+const enc = encodeURIComponent;
+const ENGINES = [
+  { id: 'google', name: () => 'Google', url: (q, l) => `https://www.google.com/search?q=${enc(q)}&hl=${l}` },
+  { id: 'wiki', name: () => 'Wikipedia', url: (q, l) => `https://${l}.wikipedia.org/w/index.php?search=${enc(q)}` },
+  { id: 'scholar', name: () => T('scholar'), url: (q, l) => `https://scholar.google.com/scholar?q=${enc(q)}&hl=${l}` },
+  { id: 'arxiv', name: () => 'arXiv', url: (q) => `https://arxiv.org/search/?query=${enc(q)}&searchtype=all` },
+  { id: 'wolfram', name: () => 'Wolfram|Alpha', url: (q) => `https://www.wolframalpha.com/input?i=${enc(q)}` },
+  { id: 'dict', name: () => T('dict'), url: (q, l) => (l === 'ca' ? `https://dlc.iec.cat/Results?DecEntradaText=${enc(q)}`
+    : l === 'en' ? `https://dictionary.cambridge.org/search/direct/?datasetsearch=english&q=${enc(q)}` : `https://dle.rae.es/${enc(q)}`) },
+  { id: 'youtube', name: () => 'YouTube', url: (q) => `https://www.youtube.com/results?search_query=${enc(q)}` },
+];
+const lastEngine = () => ENGINES.find((e) => e.id === localStorage.getItem('study-search-engine')) || ENGINES[0];
+// Texto limpio del fragmento: une palabras partidas con guion al final de línea
+function searchText(d) {
+  const t = (d?.edit ? d.edit.text : d?.text) || '';
+  return t.replace(/(\p{L})-\s*\n\s*(\p{Ll})/gu, '$1$2').replace(/\s+/g, ' ').trim()
+    .replace(/^[,.;:!?¡¿"'«»()\[\]]+|[,.;:!?¡¿"'«»()\[\]]+$/g, '').trim().slice(0, 300); // sin puntuación suelta en los extremos
+}
+function webSearch(engine) {
+  const q = searchText(pending);
+  if (!q) return;
+  try { localStorage.setItem('study-search-engine', engine.id); } catch {}
+  window.open(engine.url(q, docLang()), '_blank', 'noopener');
+  labelTagRow();
+}
+
 // Textos del popup de marcado en el idioma del documento
 function labelTagRow() {
   document.querySelectorAll('#tagRow .tag-btn[data-tag]').forEach((b) => {
@@ -2284,6 +2320,14 @@ function labelTagRow() {
   });
   const com = document.querySelector('#tagRow .tag-comment');
   if (com) { com.querySelector('.tag-name').textContent = T('addComment'); com.title = T('addCommentTip'); }
+  const sm = document.querySelector('#tagRow .search-main');
+  if (sm) {
+    const e = lastEngine();
+    sm.querySelector('.tag-name').textContent = `${T('searchIn')} ${e.name()}`;
+    sm.title = `${T('searchIn')} ${e.name()}`;
+    const more = document.querySelector('#tagRow .search-more');
+    more.title = T('searchMore'); more.setAttribute('aria-label', T('searchMore'));
+  }
 }
 function buildTagRow() {
   const row = $('#tagRow');
@@ -2321,7 +2365,18 @@ function buildTagRow() {
     await createMark({ ...d, tag: 'com', note: true });
   });
   const colorBtns = tagBtns.filter((b) => b.dataset.tag !== 'cor'), corBtn = tagBtns.find((b) => b.dataset.tag === 'cor');
-  row.replaceChildren(...colorBtns, h('span', { class: 'tag-sep' }), corBtn, com);
+  // Buscar en internet: botón principal (último buscador usado) + flecha para elegir otro
+  const sMain = h('button', { class: 'tag-btn tag-search search-main', type: 'button' }, svgIcon(ICON.search), h('span', { class: 'tag-name' }));
+  const sMore = h('button', { class: 'tag-btn tag-search search-more', type: 'button' }, svgIcon(ICON.chevDown));
+  for (const b of [sMain, sMore]) b.addEventListener('pointerdown', (e) => e.preventDefault());
+  sMain.addEventListener('click', () => webSearch(lastEngine()));
+  sMore.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cur = lastEngine();
+    showMenu(sMore, ENGINES.map((en) => ({ icon: en.id === cur.id ? ICON.check : ICON.search, label: en.name(), fn: () => webSearch(en) })));
+  });
+  const search = h('span', { class: 'search-split' }, sMain, sMore);
+  row.replaceChildren(...colorBtns, h('span', { class: 'tag-sep' }), corBtn, com, h('span', { class: 'tag-sep search-sep' }), search);
   labelTagRow();
   $('#tagRemove').addEventListener('pointerdown', (e) => e.preventDefault());
   $('#tagRemove').addEventListener('click', async () => {
@@ -3649,7 +3704,7 @@ function init() {
   $('#btnExportBackup').addEventListener('click', () => { $('#backupDialog').close(); exportBackup(); });
   $('#backupInput').addEventListener('change', (e) => { $('#backupDialog').close(); if (e.target.files[0]) importBackup(e.target.files[0]); e.target.value = ''; });
   document.addEventListener('pointerdown', (e) => {
-    if (!$('#tagPopup').hidden && !e.target.closest('#tagPopup') && !e.target.closest('.page')) {
+    if (!$('#tagPopup').hidden && !e.target.closest('#tagPopup') && !e.target.closest('.page') && !e.target.closest('.ctx-menu')) {
       hidePopup(); clearSelection(); $('.draft-rect')?.remove();
     }
   });
