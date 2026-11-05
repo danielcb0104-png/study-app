@@ -2090,13 +2090,30 @@ async function openEditor(m) {
     const docView = h('div', { class: 'te-docview', hidden: true });
     resultLabel.addEventListener('click', () => setEdView('result'));
     docTab.addEventListener('click', () => setEdView('doc'));
+    // zoom de la vista «Documento»
+    const zOut = h('button', { type: 'button', class: 'icon-btn small', title: 'Reducir', 'aria-label': 'Reducir' }, svgIcon('<path d="M6 12h12"/>'));
+    const zLbl = h('button', { type: 'button', class: 'ed-zoom-lbl', title: 'Volver al 100 %' }, '100 %');
+    const zIn = h('button', { type: 'button', class: 'icon-btn small', title: 'Ampliar', 'aria-label': 'Ampliar' }, svgIcon('<path d="M12 6v12M6 12h12"/>'));
+    const zoomBox = h('span', { class: 'ed-zoom', hidden: true }, zOut, zLbl, zIn);
+    zOut.addEventListener('click', () => edZoomStep(-1));
+    zIn.addEventListener('click', () => edZoomStep(1));
+    zLbl.addEventListener('click', () => setEdZoom(1));
+    // pellizcar en el trackpad o Ctrl/Cmd + rueda
+    let wheelAcc = 0, wheelT = null;
+    docView.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      wheelAcc += e.deltaY;
+      clearTimeout(wheelT);
+      wheelT = setTimeout(() => { const f = Math.exp(-wheelAcc / 500); wheelAcc = 0; setEdZoom((ED.docZoom || 1) * f); }, 60);
+    }, { passive: false });
     const root = h('div', { class: 'tex-editor', hidden: true },
       h('div', { class: 'te-panel', role: 'dialog', 'aria-label': 'Editor de comentario LaTeX' },
         h('header', { class: 'te-bar' }, title, h('span', { class: 'spacer' }), status, done),
         h('div', { class: 'te-main' },
           h('section', { class: 'te-code' }, codeLabel, codeBox, keys),
           h('section', { class: 'te-preview' },
-            h('div', { class: 'te-tabs', role: 'tablist' }, resultLabel, docTab),
+            h('div', { class: 'te-tabs', role: 'tablist' }, resultLabel, docTab, h('span', { class: 'spacer' }), zoomBox),
             resultScroll, docView),
         )));
     document.body.append(root);
@@ -2126,7 +2143,8 @@ async function openEditor(m) {
     });
     done.addEventListener('click', () => closeEditor());
     root.addEventListener('pointerdown', (e) => { if (e.target === root) closeEditor(); });
-    ED = { root, cm, paper, quote, status, title, resultLabel, docTab, resultScroll, docView,
+    ED = { root, cm, paper, quote, status, title, resultLabel, docTab, resultScroll, docView, zoomBox, zLbl,
+      docZoom: Math.min(3, Math.max(0.5, parseFloat(localStorage.getItem('study-ed-zoom')) || 1)),
       relabel: () => { fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); docTab.textContent = T('docView'); docTab.title = T('docViewTip'); } };
   }
   ED.m = m;
@@ -2153,16 +2171,34 @@ function setEdView(v, remember = true) {
   const doc = v === 'doc';
   ED.resultLabel.classList.toggle('on', !doc); ED.resultLabel.setAttribute('aria-selected', String(!doc));
   ED.docTab.classList.toggle('on', doc); ED.docTab.setAttribute('aria-selected', String(doc));
-  ED.resultScroll.hidden = doc; ED.docView.hidden = !doc;
+  ED.resultScroll.hidden = doc; ED.docView.hidden = !doc; ED.zoomBox.hidden = !doc;
   if (remember) { try { localStorage.setItem('study-ed-view', v); } catch {} }
   if (doc && ED.m && ED.docFor !== ED.m.id) buildEdDocView(ED.m);
 }
-function buildEdDocView(m) {
+function edZoomStep(dir) {
+  const t = Math.round((ED.docZoom || 1) * 100);
+  setEdZoom((dir > 0 ? (Math.floor(t / 10) + 1) * 10 : (Math.ceil(t / 10) - 1) * 10) / 100);
+}
+function setEdZoom(z) {
+  if (!ED?.m) return;
+  z = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+  if (z === ED.docZoom) return;
+  // mantener a la vista lo mismo que había en el centro
+  const box = ED.docView, cy = box.scrollTop + box.clientHeight / 2;
+  const pages = [...box.querySelectorAll('.ed-page')];
+  const pg = pages.find((x) => x.offsetTop + x.offsetHeight > cy) || pages[pages.length - 1];
+  const anchor = pg ? { n: +pg.dataset.n, frac: (cy - pg.offsetTop) / pg.offsetHeight, fx: box.scrollWidth > box.clientWidth ? (box.scrollLeft + box.clientWidth / 2) / box.scrollWidth : 0.5 } : null;
+  ED.docZoom = z;
+  try { localStorage.setItem('study-ed-zoom', String(z)); } catch {}
+  buildEdDocView(ED.m, anchor);
+}
+function buildEdDocView(m, anchor = null) {
   const box = ED.docView;
   ED.docFor = m.id;
   ED.docObs?.disconnect();
   box.replaceChildren();
-  const W = Math.max(200, box.clientWidth - 28);
+  ED.zLbl.textContent = `${Math.round((ED.docZoom || 1) * 100)} %`;
+  const W = Math.round(Math.max(200, box.clientWidth - 28) * (ED.docZoom || 1));
   const holders = [];
   for (const p of R.pages) {
     const H = Math.round((W * p.h) / p.w);
@@ -2194,6 +2230,13 @@ function buildEdDocView(m) {
   };
   ED.docObs = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && render(e.target)), { root: box, rootMargin: '800px 0px' });
   holders.forEach((x) => ED.docObs.observe(x));
+  // tras el zoom: el mismo sitio que había en el centro
+  if (anchor && holders[anchor.n - 1]) {
+    const t = holders[anchor.n - 1];
+    box.scrollTop = Math.max(0, t.offsetTop + anchor.frac * t.offsetHeight - box.clientHeight / 2);
+    box.scrollLeft = Math.max(0, anchor.fx * box.scrollWidth - box.clientWidth / 2);
+    return;
+  }
   // abrir por donde está el fragmento
   const target = holders[m.page - 1];
   if (target) {
