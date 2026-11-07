@@ -124,7 +124,8 @@ svg:not(mjx-container svg) { width: 20px; height: 20px; fill: none; stroke: curr
 .seg-btn svg { width: 17px; height: 17px; }
 .zoom { display: inline-flex; align-items: center; }
 #zoomLabel { min-width: 48px; text-align: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.progress-strip { position: sticky; top: calc(59px + var(--safe-top)); z-index: 19; height: 3px; background: transparent; }
+/* barra de % leído: dentro de la barra superior, en su borde inferior (no tapa el documento) */
+.progress-strip { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: transparent; pointer-events: none; }
 #progressBar { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 
 .pages { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 20px 8px calc(80px + var(--safe-bottom)); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
@@ -229,7 +230,6 @@ dialog p { margin: 0 0 16px; color: var(--muted); }
   .zoom .icon-btn { width: 32px; }
   .tools { gap: 2px; }
   .sheet { padding: 22px 16px 22px 26px; }
-  .progress-strip { top: calc(57px + var(--safe-top)); }
 }
 @media (max-width: 420px) {
   .reader-bar .icon-btn { width: 34px; }
@@ -536,7 +536,7 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .find .icon-btn svg { width: 16px; height: 16px; }
 .find:not(.has-q) #findPrev, .find:not(.has-q) #findNext, .find:not(.has-q) #findClose { display: none; }
 @media (max-width: 720px) {
-  .reader-bar { grid-template-columns: minmax(0, 1fr) auto; position: relative; }
+  .reader-bar { grid-template-columns: minmax(0, 1fr) auto; }
   #btnFind { display: inline-flex; }
   .find { display: none; }
   .reader-bar.finding .find { display: flex; position: absolute; left: 8px; right: 8px; top: calc(9px + var(--safe-top)); z-index: 2; background: var(--surface); box-shadow: 0 4px 16px rgba(0,0,0,.15); }
