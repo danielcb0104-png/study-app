@@ -660,3 +660,20 @@ body.has-minimap #reader .pages { padding-right: 130px; }
 .ed-zoom .icon-btn svg { width: 15px; height: 15px; }
 .ed-zoom-lbl { border: 0; background: transparent; font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; color: #555; min-width: 46px; cursor: pointer; padding: 4px 2px; border-radius: 6px; }
 .ed-zoom-lbl:hover { background: rgba(0,0,0,.06); }
+.latex .tx-lbl { font-weight: 400; }
+.te-key .k-math { font-family: "STIX Two Math", "Cambria Math", "Times New Roman", serif; font-size: 17px; line-height: 1; min-width: 14px; text-align: center; }
+
+/* Ocultar las páginas de notas */
+body.notes-hidden #pages .sheet-holder { display: none; }
+.notes-toggle .slash { display: none; }
+.notes-toggle.on .slash { display: inline; stroke: #c0392b; }
+.notes-toggle.on { background: color-mix(in srgb, #c0392b 10%, transparent); }
+
+/* ---------- Móvil estrecho: barra del lector en dos filas (título arriba, herramientas abajo) ---------- */
+@media (max-width: 480px) {
+  .reader-bar { grid-template-columns: minmax(0, 1fr); row-gap: 6px; padding-top: calc(6px + var(--safe-top)); padding-bottom: 6px; }
+  .reader-bar .rb-left { grid-row: 1; }
+  .reader-bar .tools { grid-row: 2; justify-self: stretch; justify-content: space-between; }
+  .reader-bar .icon-btn { height: 34px; }
+  .reader-bar.finding .find { top: calc(6px + var(--safe-top)); }
+}

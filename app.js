@@ -31,7 +31,7 @@ const I18N = {
   es: {
     notes: 'Notas', page: 'página', sheetOf: (k, n) => `hoja ${k} de ${n}`, cont: 'continuación', contShort: 'cont.',
     code: 'Código LaTeX', result: 'Resultado', docView: 'Documento', docViewTip: 'Ver las páginas del documento mientras escribes', done: 'Listo', saving: 'Guardando…', saved: 'Guardado', comment: 'Comentario',
-    figure: 'Figura', equation: 'Ecuación', bullets: 'Lista de puntos (itemize)', numbered: 'Lista numerada (enumerate)',
+    figure: 'Figura', equation: 'Ecuación', bullets: 'Lista de puntos (itemize)', numbered: 'Lista numerada (enumerate)', lettered: 'Lista a), b), c)…',
     bold: 'Negrita', italic: 'Cursiva', figTip: 'Insertar una figura (imagen centrada)', eqTip: 'Ecuación sin numerar',
     placeholder: 'Pulsa aquí para escribir tu comentario (admite LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
     previewPh: 'Aquí verás el resultado mientras escribes.', addComment: 'Añadir comentario',
@@ -44,7 +44,7 @@ const I18N = {
   ca: {
     notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
     code: 'Codi LaTeX', result: 'Resultat', docView: 'Document', docViewTip: 'Veure les pàgines del document mentre escrius', done: 'Fet', saving: 'Desant…', saved: 'Desat', comment: 'Comentari',
-    figure: 'Figura', equation: 'Equació', bullets: 'Llista de punts (itemize)', numbered: 'Llista numerada (enumerate)',
+    figure: 'Figura', equation: 'Equació', bullets: 'Llista de punts (itemize)', numbered: 'Llista numerada (enumerate)', lettered: 'Llista a), b), c)…',
     bold: 'Negreta', italic: 'Cursiva', figTip: 'Inserir una figura (imatge centrada)', eqTip: 'Equació sense numerar',
     placeholder: 'Fes clic aquí per escriure el teu comentari (admet LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
     previewPh: 'Aquí veuràs el resultat mentre escrius.', addComment: 'Afegeix un comentari',
@@ -57,7 +57,7 @@ const I18N = {
   en: {
     notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
     code: 'LaTeX code', result: 'Result', docView: 'Document', docViewTip: 'See the document pages while you write', done: 'Done', saving: 'Saving…', saved: 'Saved', comment: 'Comment',
-    figure: 'Figure', equation: 'Equation', bullets: 'Bulleted list (itemize)', numbered: 'Numbered list (enumerate)',
+    figure: 'Figure', equation: 'Equation', bullets: 'Bulleted list (itemize)', numbered: 'Numbered list (enumerate)', lettered: 'List a), b), c)…',
     bold: 'Bold', italic: 'Italic', figTip: 'Insert a figure (centred image)', eqTip: 'Unnumbered equation',
     placeholder: 'Click here to write your comment (LaTeX supported: $x^2$, \\[ … \\], \\textbf{…})',
     previewPh: 'The result will appear here as you type.', addComment: 'Add comment',
@@ -180,6 +180,7 @@ const ICON = {
   logout: '<path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   chevDown: '<path d="M7 10l5 5 5-5"/>',
+  letters: '<g style="fill:var(--ico-accent);stroke:none;font:700 6.6px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.6" y="8.9">a)</text><text x="4.6" y="14.6">b)</text><text x="4.6" y="20.3">c)</text></g><path d="M10.5 6.3h11M10.5 12h11M10.5 17.7h11"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
 };
 
@@ -1297,6 +1298,7 @@ function paintFind() {
 }
 function scrollToHit(hit) {
   if (!hit) return;
+  if (hit.type === 'dom' && notesHidden() && hit.range.startContainer?.parentElement?.closest('.sheet')) setNotesHidden(false, false);
   let top, bottom;
   if (hit.type === 'pdf') {
     const r = R.pages[hit.page - 1].el.getBoundingClientRect();
@@ -1437,7 +1439,7 @@ async function buildPages() {
     p.toggle = h('button', { class: 'read-toggle', onclick: () => toggleRead(p.num) });
     const footer = h('div', { class: 'page-footer', style: { width: `${W}px` } },
       h('span', {}, `Página ${p.num} de ${n}`), p.toggle);
-    p.sheetHolder = h('div');
+    p.sheetHolder = h('div', { class: 'sheet-holder' });
     p.block = h('div', { class: 'page-block', id: `p${p.num}` }, p.el, footer, p.sheetHolder);
     p.footer = footer;
     frag.append(p.block);
@@ -2003,9 +2005,22 @@ const KEYS = [
   [() => h('i', {}, 'I'), () => `${T('italic')}: \\textit{…}`, '\\textit{¦}'],
   [() => svgIcon(ICON.bullets), () => T('bullets'), '\\begin{itemize}\n  \\item ¦\n\\end{itemize}', true],
   [() => svgIcon(ICON.numbers), () => T('numbered'), '\\begin{enumerate}\n  \\item ¦\n\\end{enumerate}', true],
+  [() => svgIcon(ICON.letters), () => T('lettered'), '\\begin{enumerate}[label=\\alph*)]\n  \\item ¦\n\\end{enumerate}', true],
   [() => [svgIcon(ICON.image), ` ${T('figure')}`], () => T('figTip'), 'figure', true],
   [() => T('equation'), () => `${T('eqTip')}: \\begin{equation*} … \\end{equation*}`, '\\begin{equation*}\n  ¦\n\\end{equation*}', true],
+  [() => h('span', { class: 'k-math' }, 'ℝ'), () => `\\mathbb{…} (ℝ, ℕ, ℤ, ℂ…)`, '\\mathbb{¦}', false, true],
+  [() => h('span', { class: 'k-math' }, '𝒜'), () => `\\mathcal{…} (𝒜, ℋ, ℒ…)`, '\\mathcal{¦}', false, true],
 ];
+// ¿El cursor está dentro de una fórmula ($…$, \(…\), \[…\] o un entorno de ecuaciones)?
+function inMath(cm) {
+  const before = cm.getRange({ line: 0, ch: 0 }, cm.getCursor()).replace(/\\\$/g, '');
+  if ((before.match(/\$/g) || []).length % 2) return true;
+  const last = (re) => { let m, i = -1; re.lastIndex = 0; while ((m = re.exec(before))) i = m.index; return i; };
+  if (last(/\\\(/g) > last(/\\\)/g)) return true;
+  if (last(/\\\[/g) > last(/\\\]/g)) return true;
+  const env = /(equation|align|gather|multline|eqnarray|displaymath)\*?/.source;
+  return last(new RegExp(`\\\\begin\\{${env}\\}`, 'g')) > last(new RegExp(`\\\\end\\{${env}\\}`, 'g'));
+}
 // Inserta en su propia línea (saltos de línea delante/detrás si hace falta)
 function insertBlock(cm, snippet) {
   const cur = cm.getCursor();
@@ -2066,12 +2081,14 @@ async function openEditor(m) {
     const paper = h('div', { class: 'te-paper latex' });
     const quote = h('div', { class: 'te-quote' });
     const keys = h('div', { class: 'te-keys' });
-    const fillKeys = () => keys.replaceChildren(...KEYS.map(([label, title, snip, block]) => {
+    const fillKeys = () => keys.replaceChildren(...KEYS.map(([label, title, snip, block, math]) => {
       const b = h('button', { class: 'te-key', type: 'button', title: title() }, label());
       b.addEventListener('pointerdown', (e) => e.preventDefault());
       b.addEventListener('click', () => {
         if (snip === 'figure') return pickFigure();
         const cm = ED.cm;
+        // \mathbb y \mathcal solo funcionan dentro de una fórmula: si no lo estás, se añade $…$
+        if (math && !inMath(cm)) snip = `$${snip}$`;
         // con texto seleccionado, negrita/cursiva lo envuelven
         if (!block && cm.somethingSelected()) {
           const sel = cm.getSelection();
@@ -2118,7 +2135,7 @@ async function openEditor(m) {
         )));
     document.body.append(root);
     const cm = CM(codeBox, {
-      mode: 'stex', lineWrapping: true, lineNumbers: !coarsePointer, autoCloseBrackets: '()[]{}$$', matchBrackets: true,
+      mode: 'stex', lineWrapping: true, lineNumbers: !coarsePointer, autoCloseBrackets: false, matchBrackets: true, // sin autocompletar (petición de Daniel)
       indentUnit: 2, tabSize: 2, viewportMargin: Infinity, spellcheck: false, inputStyle: 'contenteditable',
       hintOptions: { hint: latexHint, completeSingle: false },
       extraKeys: {
@@ -2126,11 +2143,6 @@ async function openEditor(m) {
         Esc: (c) => { if (c.state.completionActive) c.state.completionActive.close(); else closeEditor(); },
         Tab: (c) => (c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('  ')),
       },
-    });
-    cm.on('inputRead', (c, ch) => {
-      if (!/^[a-zA-Z\\]$/.test(ch.text[0] || '')) return;
-      const cur = c.getCursor();
-      if (/\\[a-zA-Z]*$/.test(c.getLine(cur.line).slice(0, cur.ch))) c.showHint();
     });
     cm.on('change', () => {
       if (!ED.m) return;
@@ -2271,7 +2283,21 @@ async function closeEditor() {
   if (el) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
 }
 
+/* ---------- Ocultar / mostrar las páginas de notas ---------- */
+const notesHidden = () => document.body.classList.contains('notes-hidden');
+function setNotesHidden(on, keepPos = true) {
+  on = !!on;
+  if (on === notesHidden()) return;
+  const anchor = keepPos && R.doc ? captureAnchor() : null;
+  document.body.classList.toggle('notes-hidden', on);
+  try { localStorage.setItem('study-hide-notes', on ? '1' : ''); } catch {}
+  const b = $('#btnNotes');
+  if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.title = on ? 'Mostrar las páginas de notas' : 'Ocultar las páginas de notas'; }
+  if (anchor) restoreAnchor(anchor);
+  mmSoon();
+}
 function focusNote(id, focusInput = true) {
+  setNotesHidden(false, false); // ir a un comentario vuelve a mostrar las notas
   const el = document.querySelector(`.note[data-id="${id}"]`);
   if (!el) return;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3498,7 +3524,7 @@ function mmLayout() {
     if (p.el.classList.contains('read')) pg.classList.add('read');
     frag.append(pg);
     let bottom = b.top + b.h;
-    for (const sh of p.sheetHolder?.querySelectorAll('.sheet') || []) {
+    for (const sh of notesHidden() ? [] : p.sheetHolder?.querySelectorAll('.sheet') || []) {
       const sb = box(sh);
       // copia de la hoja de notas, reducida a escala (se ve su contenido real)
       const clone = sh.cloneNode(true);
@@ -3916,6 +3942,8 @@ function init() {
   $('#zoomOut').addEventListener('click', () => zoomStep(-1));
   $('#btnExport').addEventListener('click', exportAnnotated);
   $('#btnLang').addEventListener('click', (e) => chooseLang(e.currentTarget));
+  $('#btnNotes').addEventListener('click', () => setNotesHidden(!notesHidden()));
+  setNotesHidden(localStorage.getItem('study-hide-notes') === '1', false);
   $('#tagCancel').addEventListener('click', () => { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); });
   $('#btnBackup').addEventListener('click', () => $('#backupDialog').showModal());
   $('#btnNewFolder').addEventListener('click', () => createFolder());

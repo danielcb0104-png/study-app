@@ -137,11 +137,16 @@ function parseBlocks(s) {
       }
       if (env === 'itemize' || env === 'enumerate' || env === 'description') {
         flush();
-        const items = splitItems(inner).map((it) => {
-          let label = null;
+        // enumerate con formato de etiqueta: [label=\alph*)] (enumitem) o [a)] (enumerate)
+        let fmt = null, body = inner;
+        const om = env === 'enumerate' && /^\s*\[((?:[^\[\]{}]|\{[^{}]*\})*)\]/.exec(inner);
+        if (om) { fmt = enumFormat(om[1]); body = inner.slice(om[0].length); }
+        const items = splitItems(body).map((it, k) => {
+          let label = null, auto = false;
           const lm = /^\s*\[([^\]]*)\]/.exec(it);
           if (lm) { label = lm[1]; it = it.slice(lm[0].length); }
-          return { label, blocks: parseBlocks(it.trim()) };
+          else if (fmt) { label = fmt(k + 1); auto = true; }
+          return { label, auto, blocks: parseBlocks(it.trim()) };
         });
         blocks.push({ type: 'list', ordered: env === 'enumerate', desc: env === 'description', items }); i = next; continue;
       }
@@ -214,6 +219,22 @@ export function figureFrac(opts, fig) {
   const sc = /(?:^|,)\s*scale\s*=\s*([\d.]+)/.exec(opts || '');
   const natural = fig ? fig.w / 567 : 0.8; // 15 cm ≈ 567 px
   return Math.min(1, Math.max(0.05, (sc ? parseFloat(sc[1]) || 1 : 1) * natural));
+}
+// Etiquetas de enumerate: «label=\alph*)», «(\roman*)», o la forma corta «a)», «(i)», «A.»…
+const ROMAN = [['m', 1000], ['cm', 900], ['d', 500], ['cd', 400], ['c', 100], ['xc', 90], ['l', 50], ['xl', 40], ['x', 10], ['ix', 9], ['v', 5], ['iv', 4], ['i', 1]];
+const roman = (n) => { let o = ''; for (const [r, v] of ROMAN) while (n >= v) { o += r; n -= v; } return o; };
+const alph = (n) => { let o = ''; while (n > 0) { n--; o = String.fromCharCode(97 + (n % 26)) + o; n = Math.floor(n / 26); } return o; };
+function enumFormat(opt) {
+  let f = null;
+  const lm = /label\s*=\s*(\{[^{}]*\}|[^,]+)/.exec(opt);
+  if (lm) f = lm[1].trim().replace(/^\{|\}$/g, '');
+  else if (/^[^a-zA-Z0-9]*[aAiI1][^a-zA-Z0-9]*$/.test(opt.trim())) {
+    f = opt.trim().replace(/[aAiI1]/, (c) => ({ a: '\\alph*', A: '\\Alph*', i: '\\roman*', I: '\\Roman*', 1: '\\arabic*' }[c]));
+  }
+  if (!f || !/\\(alph|Alph|roman|Roman|arabic)\*/.test(f)) return null;
+  return (n) => f.replace(/\\alph\*/g, alph(n)).replace(/\\Alph\*/g, alph(n).toUpperCase())
+    .replace(/\\roman\*/g, roman(n)).replace(/\\Roman\*/g, roman(n).toUpperCase()).replace(/\\arabic\*/g, String(n))
+    .replace(/\\textbf\{([^{}]*)\}|\\textit\{([^{}]*)\}/g, '$1$2').replace(/[{}]/g, '');
 }
 // Divide el contenido de una lista en sus \item (sin entrar en listas anidadas)
 function splitItems(inner) {
@@ -411,7 +432,7 @@ export async function renderLatex(src, figs = {}, figLabel = 'Figura') {
         const l = el(b.ordered ? 'ol' : 'ul', 'tx-list');
         for (const it of b.items) {
           const li = el('li');
-          if (it.label != null) { const lb = el('span', 'tx-b'); lb.textContent = `${it.label} `; li.append(lb); if (!b.desc) li.classList.add('tx-custom'); }
+          if (it.label != null) { const lb = el('span', it.auto ? 'tx-lbl' : 'tx-b'); lb.textContent = `${it.label} `; li.append(lb); if (!b.desc) li.classList.add('tx-custom'); }
           for (const bb of it.blocks) li.append(await build(bb));
           l.append(li);
         }
