@@ -1684,7 +1684,8 @@ function anchorEl(a) {
 function restoreAnchor(a) {
   if (!a) return null;
   let el = anchorEl(a), frac = a.frac;
-  if (!el) { el = R.pages[a.num - 1]?.el; frac = 1; } // la hoja aún no está: al final de su página
+  // la hoja aún no está o está oculta (notas ocultas): al final de su página
+  if (!el || !el.getClientRects().length) { el = R.pages[a.num - 1]?.el; frac = 1; }
   if (!el) return null;
   const r = el.getBoundingClientRect();
   const top = r.top + scrollY + frac * r.height - a.y;
