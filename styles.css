@@ -706,3 +706,8 @@ body.notes-hidden #pages .sheet-holder { display: none; }
   .te-tabs { gap: 2px; padding-left: 6px; padding-right: 6px; }
   .te-tab { padding: 5px 7px; letter-spacing: .05em; }
 }
+
+/* ---------- Cursor del editor en «Resultado» (barra roja fija) ---------- */
+.te-paper span.tx-caret { display: inline-block; width: 0; height: 1.15em; margin: 0 -1px; border-left: 2px solid #e0245e; vertical-align: -0.22em; pointer-events: none; }
+.te-paper g.tx-caret, .te-paper g.tx-caret rect, .te-paper .tx-caret rect { fill: #e0245e; stroke: none; }
+.te-paper p.tx-p:has(> span.tx-caret:only-child) { min-height: 1.2em; }

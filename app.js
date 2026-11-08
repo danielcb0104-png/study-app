@@ -1,7 +1,7 @@
 // Study App — lector de PDF para estudiar
 // Guarda todo en IndexedDB (en este dispositivo). Sin servidor.
 import * as pdfjsLib from './vendor/pdf.min.mjs';
-import { renderLatex, latexForPdf, loadMathJax, COMPLETIONS } from './latex.js';
+import { renderLatex, latexForPdf, loadMathJax, COMPLETIONS, withCaret, mathAt, mathRegion } from './latex.js';
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
@@ -2102,15 +2102,11 @@ const KEYS = [
   [() => h('span', { class: 'k-math' }, 'ℝ'), () => `\\mathbb{…} (ℝ, ℕ, ℤ, ℂ…)`, '\\mathbb{¦}', false, true],
   [() => h('span', { class: 'k-math' }, '𝒜'), () => `\\mathcal{…} (𝒜, ℋ, ℒ…)`, '\\mathcal{¦}', false, true],
 ];
-// ¿El cursor está dentro de una fórmula ($…$, \(…\), \[…\] o un entorno de ecuaciones)?
+// Dentro de una fórmula, la negrita y la cursiva de texto se cambian por las matemáticas
+const MATH_FORM = { '\\textbf{¦}': '\\mathbf{¦}', '\\textit{¦}': '\\mathit{¦}' };
+// ¿El cursor está dentro de una fórmula ($…$, $$…$$, \(…\), \[…\] o un entorno de ecuaciones)?
 function inMath(cm) {
-  const before = cm.getRange({ line: 0, ch: 0 }, cm.getCursor()).replace(/\\\$/g, '');
-  if ((before.match(/\$/g) || []).length % 2) return true;
-  const last = (re) => { let m, i = -1; re.lastIndex = 0; while ((m = re.exec(before))) i = m.index; return i; };
-  if (last(/\\\(/g) > last(/\\\)/g)) return true;
-  if (last(/\\\[/g) > last(/\\\]/g)) return true;
-  const env = /(equation|align|gather|multline|eqnarray|displaymath)\*?/.source;
-  return last(new RegExp(`\\\\begin\\{${env}\\}`, 'g')) > last(new RegExp(`\\\\end\\{${env}\\}`, 'g'));
+  return mathAt(cm.getValue(), cm.indexFromPos(cm.getCursor()));
 }
 // Inserta en su propia línea (saltos de línea delante/detrás si hace falta)
 function insertBlock(cm, snippet) {
@@ -2182,17 +2178,21 @@ async function openEditor(m) {
       const b = h('button', { class: 'te-key', type: 'button', title: title() }, label());
       b.addEventListener('pointerdown', (e) => e.preventDefault());
       b.addEventListener('click', () => {
-        if (snip === 'figure') return pickFigure();
         const cm = ED.cm;
-        // \mathbb y \mathcal solo funcionan dentro de una fórmula: si no lo estás, se añade $…$
-        if (math && !inMath(cm)) snip = `$${snip}$`;
-        // con texto seleccionado, negrita/cursiva lo envuelven
+        const region = mathRegion(cm.getValue(), cm.indexFromPos(cm.getCursor()));
+        // listas, figuras y ecuaciones no caben dentro de una fórmula: van justo después de ella
+        if (block && region) cm.setCursor(cm.posFromIndex(region.end));
+        if (snip === 'figure') return pickFigure();
+        let s = snip; // (sin tocar `snip`: si no, el botón se quedaría con el cambio para siempre)
+        if (region && MATH_FORM[s]) s = MATH_FORM[s];      // negrita/cursiva dentro de una fórmula
+        if (math && !region) s = `$${s}$`;                  // \mathbb y \mathcal fuera de una fórmula: con $…$
+        // con texto seleccionado, se envuelve
         if (!block && cm.somethingSelected()) {
           const sel = cm.getSelection();
-          const [a, z] = snip.split('¦');
+          const [a, z] = s.split('¦');
           cm.replaceSelection(a + sel + z); cm.focus(); return;
         }
-        (block ? insertBlock : insertSnippet)(cm, snip);
+        (block ? insertBlock : insertSnippet)(cm, s);
       });
       return b;
     }));
@@ -2259,7 +2259,15 @@ async function openEditor(m) {
       clearTimeout(ED.saveT);
       ED.saveT = setTimeout(async () => { await saveComment(ED.m, true); if (ED?.m) ED.status.textContent = T('saved'); }, 500);
       clearTimeout(ED.timer);
-      ED.timer = setTimeout(updatePreview, 220);
+      ED.timer = setTimeout(updatePreview, 200);
+    });
+    // la barra roja de «Resultado» sigue al cursor
+    cm.on('cursorActivity', () => {
+      if (!ED?.m) return;
+      const pos = cm.indexFromPos(cm.getCursor('head'));
+      if (pos === ED.caretPos) return;
+      clearTimeout(ED.timer);
+      ED.timer = setTimeout(updatePreview, 150);
     });
     done.addEventListener('click', () => closeEditor());
     root.addEventListener('pointerdown', (e) => { if (e.target === root) closeEditor(); });
@@ -2466,11 +2474,21 @@ async function updatePreview() {
   if (!ED?.m) return;
   const id = (ED.renderId = (ED.renderId || 0) + 1);
   const src = ED.cm.getValue();
+  // posición del cursor → barra roja fija en «Resultado»
+  ED.caretPos = ED.cm.indexFromPos(ED.cm.getCursor('head'));
   let nodes;
-  try { nodes = src.trim() ? await renderLatex(src, ED.m.figs || {}, T('figure')) : [h('p', { class: 'tx-p placeholder' }, T('previewPh'))]; }
+  try { nodes = src.trim() ? await renderLatex(withCaret(src, ED.caretPos), ED.m.figs || {}, T('figure')) : [h('p', { class: 'tx-p placeholder' }, T('previewPh'))]; }
   catch (e) { nodes = [h('p', { class: 'tex-err' }, String(e.message || e))]; }
   if (id !== ED.renderId) return;
   ED.paper.replaceChildren(...nodes);
+  // que la barra se vea: desplazar «Resultado» si se ha quedado fuera
+  const caret = ED.paper.querySelector('.tx-caret');
+  const box = ED.resultScroll;
+  if (caret && !box.hidden) {
+    const r = caret.getBoundingClientRect(), b = box.getBoundingClientRect();
+    if (r.top < b.top + 8) box.scrollTop -= b.top + 8 - r.top + 30;
+    else if (r.bottom > b.bottom - 8) box.scrollTop += r.bottom - (b.bottom - 8) + 30;
+  }
 }
 async function closeEditor() {
   if (!ED?.m) return;

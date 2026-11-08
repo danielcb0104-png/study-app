@@ -354,10 +354,200 @@ function typo(t) {
 }
 
 /* =========================================================
+   Cursor del editor en la vista previa: barra roja fija.
+   withCaret(src, pos) mete un marcador en la posición del cursor, movido si hace falta
+   a un sitio donde no rompa nada (nunca dentro de un nombre de comando, de \begin{…},
+   \label{…}, de una definición de macro, entre un comando y sus argumentos, etc.).
+   Fuera de fórmulas es un carácter privado; dentro, una raya de MathJax de anchura neta 0.
+   ========================================================= */
+export const CARET_CHAR = '';
+const CARET_TEX = '\\kern-0.06em\\class{tx-caret}{\\rule[-0.25em]{0.12em}{1.2em}}\\kern-0.06em ';
+const NAME_ARGS = /^(begin|end|label|ref|eqref|pageref|includegraphics|url|href|cite|tag|color|textcolor|setlength|hspace|vspace|newline)$/;
+const MATH_TEXT_ARGS = /^(text\w*|mbox|hbox|operatorname|mathop|intertext|shortintertext)$/;
+const MATH_ENV_RE = /(equation|align|gather|multline|flalign|alignat|eqnarray|displaymath|math)\*?/.source;
+
+// ¿Está escapado el carácter en i? (número impar de \ delante)
+function escaped(s, i) { let n = 0; while (i - 1 - n >= 0 && s[i - 1 - n] === '\\') n++; return n % 2 === 1; }
+// Busca hacia atrás la llave/corchete de apertura que cierra en `end` (s[end] = '}' o ']')
+function matchBack(s, end) {
+  const close = s[end], open = close === '}' ? '{' : '[';
+  let depth = 0;
+  for (let k = end; k >= 0; k--) {
+    if (escaped(s, k)) continue;
+    if (s[k] === close) depth++;
+    else if (s[k] === open) { depth--; if (depth === 0) return k; }
+  }
+  return -1;
+}
+// Comando del que forma parte el argumento que empieza en i ({ o [): {start, name, arg} o null
+function cmdOfArg(s, i) {
+  let j = i, arg = 0;
+  for (;;) {
+    let k = j; while (k > 0 && /[ \t]/.test(s[k - 1])) k--;
+    if ((s[k - 1] === '}' || s[k - 1] === ']') && !escaped(s, k - 1)) {
+      const o = matchBack(s, k - 1);
+      if (o < 0) break;
+      j = o; arg++; continue;
+    }
+    j = k; break;
+  }
+  const m = /\\([a-zA-Z]+)\*?$/.exec(s.slice(0, j));
+  if (m && !escaped(s, m.index)) return { start: m.index, name: m[1], arg, first: j };
+  return null;
+}
+// Fórmula en la que está la posición pos: {start, end, close} (end = justo después del cierre) o null.
+// Reconoce $…$, $$…$$, \(…\), \[…\] y los entornos matemáticos (equation, align…); ignora los comentarios.
+export function mathRegion(src, pos) {
+  const s = (src || '').replace(/(^|[^\\])(%.*)$/gm, (m0, a, c) => a + ' '.repeat(c.length));
+  let open = null, k = 0;
+  while (k < pos) {
+    const c = s[k];
+    if (c === '\\') {
+      if (open && s.startsWith(open.close, k)) { k += open.close.length; open = null; continue; }
+      if (!open) {
+        if (s[k + 1] === '(') { open = { start: k, close: '\\)' }; k += 2; continue; }
+        if (s[k + 1] === '[') { open = { start: k, close: '\\]' }; k += 2; continue; }
+        const m = new RegExp(`^\\\\begin\\{(${MATH_ENV_RE})\\}`).exec(s.slice(k, k + 40));
+        if (m) { open = { start: k, close: `\\end{${m[1]}}` }; k += m[0].length; continue; }
+      }
+      k += 2; continue; // \$, \\, \{ … o el principio de un comando
+    }
+    if (c === '$') {
+      if (!open) { if (s[k + 1] === '$') { open = { start: k, close: '$$' }; k += 2; } else { open = { start: k, close: '$' }; k++; } continue; }
+      if (open.close === '$$' && s[k + 1] === '$') { open = null; k += 2; continue; }
+      if (open.close === '$') { open = null; k++; continue; }
+    }
+    k++;
+  }
+  if (!open) return null;
+  // dónde se cierra (si no se cierra, hasta el final)
+  let e = pos;
+  for (; e < s.length; e++) {
+    if (s.startsWith(open.close, e) && !(open.close[0] === '$' && escaped(s, e))) break;
+    if (s[e] === '\\' && open.close[0] === '$') e++;
+  }
+  return { start: open.start, end: Math.min(s.length, e + open.close.length), close: open.close };
+}
+// ¿La posición pos está dentro de una fórmula?
+export function mathAt(s, pos) { return !!mathRegion(s, pos); }
+// Zonas de \newcommand, \def… (el marcador ahí se repetiría en cada uso)
+function macroSpans(s) {
+  const spans = [];
+  const re = /\\(newcommand|renewcommand|providecommand|DeclareMathOperator\*?|def)(?![a-zA-Z])/g;
+  let m;
+  while ((m = re.exec(s))) {
+    let k = m.index + m[0].length;
+    for (let n = 0; n < 4 && k < s.length; n++) {
+      k = skipWs(s, k);
+      if (s[k] === '*') { k++; continue; }
+      if (s[k] === '{') { k = readGroup(s, k)[1]; continue; }
+      if (s[k] === '[') { const e = s.indexOf(']', k); if (e > 0) { k = e + 1; continue; } }
+      const nm = /^\\[a-zA-Z]+(#\d)*/.exec(s.slice(k)); if (nm) { k += nm[0].length; continue; }
+      break;
+    }
+    spans.push([m.index, k]); re.lastIndex = Math.max(k, m.index + 1);
+  }
+  return spans;
+}
+function safeCaretPos(s, pos, math) {
+  for (let guard = 0; guard < 40; guard++) {
+    const before = s.slice(0, pos);
+    // dentro o justo detrás de un nombre de comando (o de una \ sola): delante del comando
+    const cw = /\\[a-zA-Z]*$/.exec(before);
+    if (cw && !escaped(s, cw.index)) { pos = cw.index; continue; }
+    // dentro de \(  \[  $$ (entre sus dos caracteres)
+    if (s[pos - 1] === '$' && s[pos] === '$' && !escaped(s, pos - 1)) { pos--; continue; }
+    // detrás de ^ o _ : delante de ellos
+    if (math) { const sc = /[\^_]\s*$/.exec(before); if (sc && !escaped(s, sc.index)) { pos = sc.index; continue; } }
+    // dentro de un argumento que es un nombre (\begin{…}, \label{…}, \text{…} en una fórmula…)
+    let depth = 0, open = -1;
+    for (let k = pos - 1; k >= 0; k--) {
+      if (escaped(s, k)) continue;
+      if (s[k] === '}') depth++;
+      else if (s[k] === '{') { if (depth === 0) { open = k; break; } depth--; }
+    }
+    if (open >= 0) {
+      const c = cmdOfArg(s, open);
+      if (c && ((NAME_ARGS.test(c.name) && !(c.name === 'textcolor' && c.arg > 0)) || (math && MATH_TEXT_ARGS.test(c.name)))) { pos = c.start; continue; }
+    }
+    // dentro de unas opciones [ … ] de \begin{…}, \item, \includegraphics, \\
+    const lineStart = s.lastIndexOf('\n', pos - 1) + 1;
+    let ob = -1, d2 = 0;
+    for (let k = pos - 1; k >= lineStart; k--) {
+      if (escaped(s, k)) continue;
+      if (s[k] === ']') d2++; else if (s[k] === '[') { if (d2 === 0) { ob = k; break; } d2--; }
+    }
+    if (ob >= 0) {
+      const c = cmdOfArg(s, ob);
+      if (c && /^(begin|item|includegraphics|sqrt)$/.test(c.name) && !(math && c.name === 'sqrt')) { pos = c.start; continue; }
+      if (s[ob - 1] === '\\' && s[ob - 2] === '\\') { pos = ob - 2; continue; }
+    }
+    // justo antes de los argumentos de un comando, o entre dos argumentos
+    const nx = s[pos];
+    if ((nx === '{' || nx === '[') && !escaped(s, pos)) {
+      const c = cmdOfArg(s, pos);
+      if (c) { pos = c.start; continue; }
+    }
+    // justo antes de ^ _ ' : delante de la base
+    if (math && /[\^_']/.test(nx || '')) {
+      let k = pos; while (k > 0 && /\s/.test(s[k - 1])) k--;
+      if (k > 0 && s[k - 1] === '}' && !escaped(s, k - 1)) { const o = matchBack(s, k - 1); const c = o >= 0 ? cmdOfArg(s, o) : null; pos = c ? c.start : Math.max(0, o); continue; }
+      const w = /\\[a-zA-Z]+\*?$/.exec(s.slice(0, k));
+      if (w && !escaped(s, w.index)) { pos = w.index; continue; }
+      if (k > 0 && k === pos) { pos = k - 1; continue; }
+      pos = k; continue;
+    }
+    // justo delante de un \item (o en el preámbulo de la lista): al principio de ese elemento
+    if (!math) {
+      const it = /^\s*\\item(?![a-zA-Z])\*?(\s*\[[^\]\n]*\])?[ \t]*/.exec(s.slice(pos));
+      if (it && /[\s\]]$/.test(it[0])) { pos += it[0].length; continue; }
+    }
+    return pos;
+  }
+  return pos;
+}
+export function withCaret(src, pos) {
+  src = src || '';
+  pos = Math.max(0, Math.min(pos | 0, src.length));
+  // en un comentario (que no se dibuja): la barra va donde empieza el comentario
+  const lineStart = src.lastIndexOf('\n', pos - 1) + 1;
+  for (let k = lineStart; k < pos; k++) if (src[k] === '%' && !escaped(src, k)) { pos = k; break; }
+  const clean = src.replace(/(^|[^\\])(%.*)$/gm, (m0, a, c) => a + ' '.repeat(c.length));
+  for (const [a, b] of macroSpans(clean)) if (pos > a && pos < b) pos = a;
+  let math = mathAt(clean, pos);
+  for (let i = 0; i < 4; i++) {
+    const p2 = safeCaretPos(clean, pos, math);
+    const m2 = mathAt(clean, p2);
+    pos = p2;
+    if (m2 === math) break;
+    math = m2;
+  }
+  if (math) return src.slice(0, pos) + CARET_TEX + src.slice(pos);
+  // en una línea vacía: un párrafo propio con solo la barra (sin unir los párrafos de alrededor)
+  const ls = src.lastIndexOf('\n', pos - 1) + 1;
+  let le = src.indexOf('\n', pos); if (le < 0) le = src.length;
+  if (!src.slice(ls, le).trim() && ls > 0 && le < src.length) return `${src.slice(0, pos)}\n${CARET_CHAR}\n${src.slice(pos)}`;
+  return src.slice(0, pos) + CARET_CHAR + src.slice(pos);
+}
+function caretSpan() { const c = document.createElement('span'); c.className = 'tx-caret'; return c; }
+const hasMathErr = (n) => !!(n?.classList?.contains('tex-err') || n?.querySelector?.('[data-mml-node="merror"]'));
+
+/* =========================================================
    Dibujo en HTML (vista previa y hojas de notas)
    ========================================================= */
 const mathCache = new Map();
 async function mathNode(MJ, tex, display, macros, numbered) {
+  // con el cursor dentro: si así la fórmula da error (y sin él no), el cursor va delante de la fórmula
+  if (tex.includes(CARET_TEX)) {
+    const node = await mathNode0(MJ, tex, display, macros, numbered);
+    if (!hasMathErr(node)) return node;
+    const plain = await mathNode0(MJ, tex.split(CARET_TEX).join(''), display, macros, numbered);
+    const w = document.createElement('span'); w.className = 'tx-caret-wrap'; w.append(caretSpan(), plain);
+    return w;
+  }
+  return mathNode0(MJ, tex, display, macros, numbered);
+}
+async function mathNode0(MJ, tex, display, macros, numbered) {
   const key = `${display ? 'D' : 'I'}|${macros}|${tex}`;
   if (!numbered && mathCache.has(key)) return mathCache.get(key).cloneNode(true);
   let node;
@@ -392,6 +582,10 @@ export async function renderLatex(src, figs = {}, figLabel = 'Figura') {
     for (const it of items) {
       if (it.t === 'text') {
         let el = document.createTextNode(it.s);
+        if (it.s.includes(CARET_CHAR)) { // el cursor del editor
+          el = document.createDocumentFragment();
+          it.s.split(CARET_CHAR).forEach((part, k) => { if (k) el.append(caretSpan()); if (part) el.append(document.createTextNode(part)); });
+        }
         if (it.b || it.i || it.u || it.tt || it.sc) {
           const sp = document.createElement('span');
           sp.className = ['b', 'i', 'u', 'tt', 'sc'].filter((k) => it[k]).map((k) => `tx-${k}`).join(' ');
