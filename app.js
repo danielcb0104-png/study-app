@@ -30,7 +30,7 @@ const LANGS = [['es', 'Castellano'], ['ca', 'Català'], ['en', 'English']];
 const I18N = {
   es: {
     notes: 'Notas', page: 'página', sheetOf: (k, n) => `hoja ${k} de ${n}`, cont: 'continuación', contShort: 'cont.',
-    code: 'Código LaTeX', result: 'Resultado', docView: 'Documento', docViewTip: 'Ver las páginas del documento mientras escribes', done: 'Listo', saving: 'Guardando…', saved: 'Guardado', comment: 'Comentario',
+    code: 'Código LaTeX', result: 'Resultado', docView: 'Documento', docViewTip: 'Ver las páginas del documento mientras escribes', auxView: 'Documento auxiliar', auxShort: 'Auxiliar', auxViewTip: 'Ver el documento auxiliar (por ejemplo, un formulario) mientras escribes', auxNone: 'Este documento no tiene documento auxiliar. Puedes añadir uno (por ejemplo, un formulario) para consultarlo aquí mientras escribes.', auxPick: 'Elegir documento auxiliar…', auxLoading: 'Abriendo el documento auxiliar…', auxErr: 'No se pudo abrir el documento auxiliar.', done: 'Listo', saving: 'Guardando…', saved: 'Guardado', comment: 'Comentario',
     figure: 'Figura', equation: 'Ecuación', bullets: 'Lista de puntos (itemize)', numbered: 'Lista numerada (enumerate)', lettered: 'Lista a), b), c)…',
     bold: 'Negrita', italic: 'Cursiva', figTip: 'Insertar una figura (imagen centrada)', eqTip: 'Ecuación sin numerar',
     placeholder: 'Pulsa aquí para escribir tu comentario (admite LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
@@ -43,7 +43,7 @@ const I18N = {
   },
   ca: {
     notes: 'Notes', page: 'pàgina', sheetOf: (k, n) => `full ${k} de ${n}`, cont: 'continuació', contShort: 'cont.',
-    code: 'Codi LaTeX', result: 'Resultat', docView: 'Document', docViewTip: 'Veure les pàgines del document mentre escrius', done: 'Fet', saving: 'Desant…', saved: 'Desat', comment: 'Comentari',
+    code: 'Codi LaTeX', result: 'Resultat', docView: 'Document', docViewTip: 'Veure les pàgines del document mentre escrius', auxView: 'Document auxiliar', auxShort: 'Auxiliar', auxViewTip: 'Veure el document auxiliar (per exemple, un formulari) mentre escrius', auxNone: 'Aquest document no té document auxiliar. Pots afegir-ne un (per exemple, un formulari) per consultar-lo aquí mentre escrius.', auxPick: 'Tria el document auxiliar…', auxLoading: 'Obrint el document auxiliar…', auxErr: 'No s’ha pogut obrir el document auxiliar.', done: 'Fet', saving: 'Desant…', saved: 'Desat', comment: 'Comentari',
     figure: 'Figura', equation: 'Equació', bullets: 'Llista de punts (itemize)', numbered: 'Llista numerada (enumerate)', lettered: 'Llista a), b), c)…',
     bold: 'Negreta', italic: 'Cursiva', figTip: 'Inserir una figura (imatge centrada)', eqTip: 'Equació sense numerar',
     placeholder: 'Fes clic aquí per escriure el teu comentari (admet LaTeX: $x^2$, \\[ … \\], \\textbf{…})',
@@ -56,7 +56,7 @@ const I18N = {
   },
   en: {
     notes: 'Notes', page: 'page', sheetOf: (k, n) => `sheet ${k} of ${n}`, cont: 'continued', contShort: 'cont.',
-    code: 'LaTeX code', result: 'Result', docView: 'Document', docViewTip: 'See the document pages while you write', done: 'Done', saving: 'Saving…', saved: 'Saved', comment: 'Comment',
+    code: 'LaTeX code', result: 'Result', docView: 'Document', docViewTip: 'See the document pages while you write', auxView: 'Auxiliary document', auxShort: 'Auxiliary', auxViewTip: 'See the auxiliary document (e.g. a formula sheet) while you write', auxNone: 'This document has no auxiliary document. You can add one (e.g. a formula sheet) to look at it here while you write.', auxPick: 'Choose auxiliary document…', auxLoading: 'Opening the auxiliary document…', auxErr: 'The auxiliary document could not be opened.', done: 'Done', saving: 'Saving…', saved: 'Saved', comment: 'Comment',
     figure: 'Figure', equation: 'Equation', bullets: 'Bulleted list (itemize)', numbered: 'Numbered list (enumerate)', lettered: 'List a), b), c)…',
     bold: 'Bold', italic: 'Italic', figTip: 'Insert a figure (centred image)', eqTip: 'Unnumbered equation',
     placeholder: 'Click here to write your comment (LaTeX supported: $x^2$, \\[ … \\], \\textbf{…})',
@@ -179,6 +179,9 @@ const ICON = {
   cloud: '<path d="M7 18.5h10.5a4 4 0 00.6-7.95A6 6 0 006.6 9.2 4.7 4.7 0 007 18.5z"/>',
   logout: '<path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  clip: '<path d="M20 11.5l-8.2 8.2a5 5 0 01-7.1-7.1l8.6-8.6a3.3 3.3 0 014.7 4.7l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9"/>',
+  swap: '<path d="M4 8h13M13.5 4.5L17 8l-3.5 3.5"/><path d="M20 16H7M10.5 12.5L7 16l3.5 3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
   chevDown: '<path d="M7 10l5 5 5-5"/>',
   letters: '<g style="fill:var(--ico-accent);stroke:none;font:700 6.6px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.6" y="8.9">a)</text><text x="4.6" y="14.6">b)</text><text x="4.6" y="20.3">c)</text></g><path d="M10.5 6.3h11M10.5 12h11M10.5 17.7h11"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
@@ -1052,8 +1055,9 @@ function renderTrash(trashed, folders) {
   }
 }
 
-async function importFiles(fileList) {
-  LIB.trash = false;
+async function importFiles(fileList, { folderId = LIB.folderId, refresh = true } = {}) {
+  if (refresh) LIB.trash = false;
+  const ids = [];
   const files = [...fileList].filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
   if (!files.length) { toast('Solo se admiten archivos PDF'); return; }
   for (const [i, f] of files.entries()) {
@@ -1066,8 +1070,9 @@ async function importFiles(fileList) {
       await db.put('docs', {
         id, name: f.name.replace(/\.pdf$/i, ''), size: f.size, addedAt: Date.now(), openedAt: 0,
         pageCount: info.pageCount, pageChars: info.pageChars, thumb: info.thumb,
-        read: [], lastPage: 1, zoom: 1, folderId: LIB.folderId, lang: info.lang,
+        read: [], lastPage: 1, zoom: 1, folderId, lang: info.lang,
       });
+      ids.push(id);
     } catch (err) {
       console.error(err);
       toast(`No se pudo abrir ${f.name}${err?.name === 'PasswordException' ? ' (protegido con contraseña)' : ''}`);
@@ -1075,7 +1080,8 @@ async function importFiles(fileList) {
   }
   busy(false);
   try { await navigator.storage?.persist?.(); } catch {}
-  renderLibrary();
+  if (refresh) renderLibrary();
+  return ids;
 }
 
 /* Cuenta caracteres por página (para el % leído) y crea miniatura */
@@ -1132,6 +1138,7 @@ async function openDoc(id) {
     document.title = `${doc.name} · Study App`;
     setMode('text');
     updateLangButton();
+    updateAuxButton();
     labelTagRow();
     resetFind();
     await buildPages();
@@ -1162,6 +1169,89 @@ async function computeCharsInBackground() {
   doc.pageChars = chars; doc.pageCount = pdf.numPages;
   await db.put('docs', doc);
   updateProgress();
+}
+
+/* =========================================================
+   DOCUMENTO AUXILIAR: un PDF de consulta asociado al documento (p. ej. un formulario)
+   que se ve en el editor de comentarios, pestaña «Documento auxiliar».
+   Se guarda en el documento como doc.aux = id de otro documento de la biblioteca.
+   ========================================================= */
+async function auxDoc() {
+  const id = R.doc?.aux;
+  if (!id) return null;
+  const d = await db.get('docs', id);
+  return d && live(d) ? d : null;
+}
+async function updateAuxButton() {
+  const b = $('#btnAux');
+  if (!b || !R.doc) return;
+  const d = await auxDoc();
+  b.classList.toggle('has', !!d);
+  $('#auxLbl').textContent = d ? d.name : 'Documento auxiliar';
+  b.title = d ? `Documento auxiliar: ${d.name}\nSe ve en el editor de comentarios (pestaña «Documento auxiliar»). Clic para cambiarlo o quitarlo.`
+    : 'Añadir un documento auxiliar (por ejemplo, un formulario) para consultarlo mientras escribes comentarios';
+  b.setAttribute('aria-label', d ? `Documento auxiliar: ${d.name}` : 'Añadir documento auxiliar');
+}
+async function auxClick(anchor) {
+  const d = await auxDoc();
+  if (!d) return auxDialog();
+  showMenu(anchor, [
+    { icon: ICON.swap, label: 'Cambiar el documento auxiliar…', fn: () => auxDialog() },
+    { icon: ICON.trash, label: 'Quitar el documento auxiliar', danger: true, fn: () => setAux(null) },
+  ]);
+}
+async function setAux(id) {
+  if (!R.doc) return;
+  const had = !!R.doc.aux;
+  if (id) R.doc.aux = id; else delete R.doc.aux;
+  await db.put('docs', R.doc);
+  updateAuxButton();
+  if (ED) { ED.auxFor = null; if (ED.view === 'aux' && !ED.root.hidden) buildEdAuxView(); }
+  toast(id ? (had ? 'Documento auxiliar cambiado' : 'Documento auxiliar añadido') : 'Documento auxiliar quitado');
+}
+async function auxDialog() {
+  if (!R.doc) return;
+  const [docsAll, folders] = await Promise.all([db.getAll('docs'), db.getAll('folders')]);
+  const docs = docsAll.filter((d) => live(d) && d.id !== R.doc.id);
+  const where = (d) => folderPath(folders, d.folderId || null).map((f) => f.name).join(' › ') || 'Biblioteca';
+  docs.sort((a, b) => where(a).localeCompare(where(b), 'es') || byName(a, b));
+  let pick = docs.some((d) => d.id === R.doc.aux) ? R.doc.aux : null;
+  const cancel = h('button', { type: 'button', class: 'btn ghost' }, 'Cancelar');
+  const ok = h('button', { type: 'button', class: 'btn primary' }, 'Usar este documento');
+  const fileIn = h('input', { type: 'file', accept: 'application/pdf,.pdf', hidden: true });
+  const upload = h('button', { type: 'button', class: 'btn ghost aux-upload' }, svgIcon(ICON.plus), 'Subir un PDF nuevo…');
+  const list = h('div', { class: 'folder-list merge-list', role: 'radiogroup' });
+  let lastWhere = null;
+  for (const d of docs) {
+    const w = where(d);
+    if (w !== lastWhere) { list.append(h('div', { class: 'merge-group' }, w)); lastWhere = w; }
+    const rb = h('input', { type: 'radio', name: 'auxdoc' }); rb.checked = pick === d.id;
+    const row = h('label', { class: `folder-row merge-row${rb.checked ? ' is-on' : ''}` }, rb, h('span', {}, d.name), h('span', { class: 'here' }, `${d.pageCount || '?'} pág.`));
+    rb.addEventListener('change', () => { pick = d.id; list.querySelectorAll('.merge-row').forEach((r) => r.classList.toggle('is-on', r === row)); ok.disabled = false; });
+    row.addEventListener('dblclick', () => { pick = d.id; ok.click(); });
+    list.append(row);
+  }
+  const body = docs.length ? list : h('p', { class: 'merge-note' }, 'Aún no tienes otros documentos en la biblioteca. Sube el PDF que quieras usar como auxiliar.');
+  const dlg = h('dialog', { class: 'merge-dialog aux-dialog' },
+    h('form', { method: 'dialog', onsubmit: (e) => e.preventDefault() },
+      h('h3', {}, 'Documento auxiliar'),
+      h('p', { class: 'merge-sub' }, `Elige un PDF para consultarlo mientras escribes los comentarios de «${R.doc.name}» (pestaña «Documento auxiliar» del editor). Se queda guardado con este documento.`),
+      body, h('div', { class: 'aux-up-row' }, upload, fileIn),
+      h('div', { class: 'dialog-actions' }, cancel, ok)));
+  ok.disabled = !pick;
+  cancel.addEventListener('click', () => dlg.close());
+  ok.addEventListener('click', () => { if (!pick) return; dlg.close(); if (pick !== R.doc.aux) setAux(pick); });
+  upload.addEventListener('click', () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const files = [...fileIn.files];
+    if (!files.length) return;
+    dlg.close();
+    const ids = await importFiles(files.slice(0, 1), { folderId: R.doc.folderId || null, refresh: false });
+    if (ids[0]) setAux(ids[0]);
+  });
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
 }
 
 /* =========================================================
@@ -2069,6 +2159,12 @@ function pickFigure() {
   figInput.click();
 }
 
+function noWritingSuggestions(el) {
+  if (!el) return;
+  el.setAttribute('writingsuggestions', 'false'); // Safari 18+: sin predicciones en línea
+  el.setAttribute('autocomplete', 'off'); el.setAttribute('autocorrect', 'off'); el.setAttribute('autocapitalize', 'off');
+  el.setAttribute('spellcheck', 'false');
+}
 let ED = null; // { root, cm, paper, quote, status, m, renderId, timer }
 async function openEditor(m) {
   hidePopup(); clearSelection();
@@ -2106,8 +2202,15 @@ async function openEditor(m) {
     const docTab = h('button', { type: 'button', class: 'te-tab', role: 'tab' });
     const resultScroll = h('div', { class: 'te-scroll' }, paper); // el fragmento ya se ve en la pestaña «Documento»
     const docView = h('div', { class: 'te-docview', hidden: true });
+    // tercera pestaña: el documento auxiliar (p. ej. un formulario)
+    const auxTab = h('button', { type: 'button', class: 'te-tab te-tab-aux', role: 'tab' }, h('span', { class: 'long' }), h('span', { class: 'short' }));
+    const auxView = h('div', { class: 'te-docview te-auxview', hidden: true });
     resultLabel.addEventListener('click', () => setEdView('result'));
     docTab.addEventListener('click', () => setEdView('doc'));
+    auxTab.addEventListener('click', () => setEdView('aux'));
+    // recordar por dónde se va leyendo el auxiliar
+    let auxPosT = null;
+    auxView.addEventListener('scroll', () => { clearTimeout(auxPosT); auxPosT = setTimeout(saveAuxPos, 250); }, { passive: true });
     // zoom de la vista «Documento»
     const zOut = h('button', { type: 'button', class: 'icon-btn small', title: 'Reducir', 'aria-label': 'Reducir' }, svgIcon('<path d="M6 12h12"/>'));
     const zLbl = h('button', { type: 'button', class: 'ed-zoom-lbl', title: 'Volver al 100 %' }, '100 %');
@@ -2118,26 +2221,28 @@ async function openEditor(m) {
     zLbl.addEventListener('click', () => setEdZoom(1));
     // pellizcar en el trackpad o Ctrl/Cmd + rueda
     let wheelAcc = 0, wheelT = null;
-    docView.addEventListener('wheel', (e) => {
+    const onWheel = (e) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       wheelAcc += e.deltaY;
       clearTimeout(wheelT);
-      wheelT = setTimeout(() => { const f = Math.exp(-wheelAcc / 500); wheelAcc = 0; setEdZoom((ED.docZoom || 1) * f); }, 60);
-    }, { passive: false });
+      wheelT = setTimeout(() => { const f = Math.exp(-wheelAcc / 500); wheelAcc = 0; setEdZoom(edZoomNow() * f); }, 60);
+    };
+    docView.addEventListener('wheel', onWheel, { passive: false });
+    auxView.addEventListener('wheel', onWheel, { passive: false });
     const root = h('div', { class: 'tex-editor', hidden: true },
       h('div', { class: 'te-panel', role: 'dialog', 'aria-label': 'Editor de comentario LaTeX' },
         h('header', { class: 'te-bar' }, title, h('span', { class: 'spacer' }), status, done),
         h('div', { class: 'te-main' },
           h('section', { class: 'te-code' }, codeLabel, codeBox, keys),
           h('section', { class: 'te-preview' },
-            h('div', { class: 'te-tabs', role: 'tablist' }, resultLabel, docTab, h('span', { class: 'spacer' }), zoomBox),
-            resultScroll, docView),
+            h('div', { class: 'te-tabs', role: 'tablist' }, resultLabel, docTab, auxTab, h('span', { class: 'spacer' }), zoomBox),
+            resultScroll, docView, auxView),
         )));
     document.body.append(root);
     const cm = CM(codeBox, {
       mode: 'stex', lineWrapping: true, lineNumbers: !coarsePointer, autoCloseBrackets: false, matchBrackets: true, // sin autocompletar (petición de Daniel)
-      indentUnit: 2, tabSize: 2, viewportMargin: Infinity, spellcheck: false, inputStyle: 'contenteditable',
+      indentUnit: 2, tabSize: 2, viewportMargin: Infinity, spellcheck: false, autocorrect: false, autocapitalize: false, inputStyle: 'contenteditable',
       hintOptions: { hint: latexHint, completeSingle: false },
       extraKeys: {
         'Ctrl-Space': 'autocomplete', 'Cmd-Enter': () => closeEditor(), 'Ctrl-Enter': () => closeEditor(),
@@ -2145,6 +2250,8 @@ async function openEditor(m) {
         Tab: (c) => (c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('  ')),
       },
     });
+    // sin texto predictivo del sistema (macOS/iOS sugieren y meten palabras escritas antes, y descolocan el cursor)
+    noWritingSuggestions(root); noWritingSuggestions(cm.getInputField());
     cm.on('change', () => {
       if (!ED.m) return;
       ED.m.comment = cm.getValue(); ED.m.fmt = 'latex';
@@ -2156,9 +2263,13 @@ async function openEditor(m) {
     });
     done.addEventListener('click', () => closeEditor());
     root.addEventListener('pointerdown', (e) => { if (e.target === root) closeEditor(); });
-    ED = { root, cm, paper, quote, status, title, resultLabel, docTab, resultScroll, docView, zoomBox, zLbl,
-      docZoom: Math.min(3, Math.max(0.5, parseFloat(localStorage.getItem('study-ed-zoom')) || 1)),
-      relabel: () => { fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); docTab.textContent = T('docView'); docTab.title = T('docViewTip'); } };
+    const zoomPref = (k) => Math.min(3, Math.max(0.5, parseFloat(localStorage.getItem(k)) || 1));
+    ED = { root, cm, paper, quote, status, title, resultLabel, docTab, auxTab, resultScroll, docView, auxView, zoomBox, zLbl,
+      docZoom: zoomPref('study-ed-zoom'), auxZoom: zoomPref('study-aux-zoom'), view: 'result',
+      relabel: () => {
+        fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); docTab.textContent = T('docView'); docTab.title = T('docViewTip');
+        auxTab.querySelector('.long').textContent = T('auxView'); auxTab.querySelector('.short').textContent = T('auxShort'); auxTab.title = T('auxViewTip');
+      } };
   }
   ED.m = m;
   ED.relabel();
@@ -2176,62 +2287,75 @@ async function openEditor(m) {
   ED.cm.setCursor(ED.cm.lineCount(), 0);
   updatePreview();
   ED.docFor = null;
-  setEdView(localStorage.getItem('study-ed-view') === 'doc' ? 'doc' : 'result', false);
+  let v = localStorage.getItem('study-ed-view');
+  if (v === 'aux' && !R.doc?.aux) v = 'result'; // sin auxiliar, no abrir en una pestaña vacía
+  setEdView(v === 'doc' || v === 'aux' ? v : 'result', false);
 }
-/* Vista «Documento» del editor: las páginas del PDF, abiertas donde está el fragmento */
+/* Vistas de la derecha del editor: «Resultado», «Documento» (el PDF, abierto donde está el fragmento)
+   y «Documento auxiliar» (otro PDF de consulta) */
 function setEdView(v, remember = true) {
   if (!ED) return;
-  const doc = v === 'doc';
-  ED.resultLabel.classList.toggle('on', !doc); ED.resultLabel.setAttribute('aria-selected', String(!doc));
-  ED.docTab.classList.toggle('on', doc); ED.docTab.setAttribute('aria-selected', String(doc));
-  ED.resultScroll.hidden = doc; ED.docView.hidden = !doc; ED.zoomBox.hidden = !doc;
+  if (!['result', 'doc', 'aux'].includes(v)) v = 'result';
+  ED.view = v;
+  for (const [k, tab] of [['result', ED.resultLabel], ['doc', ED.docTab], ['aux', ED.auxTab]]) {
+    tab.classList.toggle('on', k === v); tab.setAttribute('aria-selected', String(k === v));
+  }
+  ED.resultScroll.hidden = v !== 'result'; ED.docView.hidden = v !== 'doc'; ED.auxView.hidden = v !== 'aux';
+  ED.zoomBox.hidden = v === 'result';
   if (remember) { try { localStorage.setItem('study-ed-view', v); } catch {} }
-  if (doc && ED.m && ED.docFor !== ED.m.id) buildEdDocView(ED.m);
+  if (v === 'doc') {
+    ED.zLbl.textContent = `${Math.round(ED.docZoom * 100)} %`;
+    if (ED.m && ED.docFor !== ED.m.id) buildEdDocView(ED.m);
+  }
+  if (v === 'aux') {
+    ED.zLbl.textContent = `${Math.round(ED.auxZoom * 100)} %`;
+    if (ED.auxFor !== (R.doc?.aux || '') || !ED.auxView.childElementCount) buildEdAuxView();
+    else if (!ED.auxReady) ED.zoomBox.hidden = true;
+  }
 }
+const edZoomNow = () => (ED.view === 'aux' ? ED.auxZoom : ED.docZoom) || 1;
 function edZoomStep(dir) {
-  const t = Math.round((ED.docZoom || 1) * 100);
+  const t = Math.round(edZoomNow() * 100);
   setEdZoom((dir > 0 ? (Math.floor(t / 10) + 1) * 10 : (Math.ceil(t / 10) - 1) * 10) / 100);
 }
-function setEdZoom(z) {
-  if (!ED?.m) return;
-  z = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
-  if (z === ED.docZoom) return;
-  // mantener a la vista lo mismo que había en el centro
-  const box = ED.docView, cy = box.scrollTop + box.clientHeight / 2;
+// lo que hay en el centro de la vista (para mantenerlo al cambiar el zoom)
+function viewCenter(box) {
+  const cy = box.scrollTop + box.clientHeight / 2;
   const pages = [...box.querySelectorAll('.ed-page')];
   const pg = pages.find((x) => x.offsetTop + x.offsetHeight > cy) || pages[pages.length - 1];
-  const anchor = pg ? { n: +pg.dataset.n, frac: (cy - pg.offsetTop) / pg.offsetHeight, fx: box.scrollWidth > box.clientWidth ? (box.scrollLeft + box.clientWidth / 2) / box.scrollWidth : 0.5 } : null;
+  return pg ? { n: +pg.dataset.n, frac: (cy - pg.offsetTop) / pg.offsetHeight, fx: box.scrollWidth > box.clientWidth ? (box.scrollLeft + box.clientWidth / 2) / box.scrollWidth : 0.5 } : null;
+}
+function setEdZoom(z) {
+  if (!ED?.m || ED.view === 'result') return;
+  z = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+  if (z === edZoomNow()) return;
+  if (ED.view === 'aux') {
+    if (!ED.auxReady) return;
+    const anchor = viewCenter(ED.auxView);
+    ED.auxZoom = z;
+    try { localStorage.setItem('study-aux-zoom', String(z)); } catch {}
+    buildEdAuxView(anchor);
+    return;
+  }
+  const anchor = viewCenter(ED.docView);
   ED.docZoom = z;
   try { localStorage.setItem('study-ed-zoom', String(z)); } catch {}
   buildEdDocView(ED.m, anchor);
 }
-function buildEdDocView(m, anchor = null) {
-  const box = ED.docView;
-  ED.docFor = m.id;
-  ED.docObs?.disconnect();
+// Coloca en `box` las páginas de un PDF (pages[i] = {num, w, h, page}) a anchura W y las pinta al acercarse
+function fillPdfView(box, pages, W, decorate = null) {
+  box._obs?.disconnect();
   box.replaceChildren();
-  ED.zLbl.textContent = `${Math.round((ED.docZoom || 1) * 100)} %`;
-  const W = Math.round(Math.max(200, box.clientWidth - 28) * (ED.docZoom || 1));
-  const holders = [];
-  for (const p of R.pages) {
-    const H = Math.round((W * p.h) / p.w);
-    const hl = h('div', { class: 'ed-page', 'data-n': p.num, style: { width: `${W}px`, height: `${H}px` } }, h('span', { class: 'ed-page-num' }, String(p.num)));
-    // marcas de la página (la del comentario, más visible)
-    for (const mk of marksOfPage(p.num)) {
-      const c = tagById(mk.tag).color, cur = mk.id === m.id;
-      for (const [x, y, w, hh] of mk.rects) {
-        const el = h('i', { class: `ed-mark${cur ? ' cur' : ''}`, style: { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${hh * 100}%`, background: hexA(c, cur ? 0.45 : 0.25) } });
-        el.style.setProperty('--c', c);
-        hl.append(el);
-      }
-    }
-    holders.push(hl);
-  }
+  const holders = pages.map((p) => {
+    const hl = h('div', { class: 'ed-page', 'data-n': p.num, style: { width: `${W}px`, height: `${Math.round((W * p.h) / p.w)}px` } }, h('span', { class: 'ed-page-num' }, String(p.num)));
+    decorate?.(hl, p);
+    return hl;
+  });
   box.append(...holders);
   const render = async (hl) => {
     if (hl.dataset.done) return;
     hl.dataset.done = '1';
-    const p = R.pages[+hl.dataset.n - 1];
+    const p = pages[+hl.dataset.n - 1];
     try {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const vp = p.page.getViewport({ scale: (W * dpr) / p.w });
@@ -2241,21 +2365,102 @@ function buildEdDocView(m, anchor = null) {
       hl.prepend(c);
     } catch (e) { delete hl.dataset.done; console.warn(e); }
   };
-  ED.docObs = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && render(e.target)), { root: box, rootMargin: '800px 0px' });
-  holders.forEach((x) => ED.docObs.observe(x));
+  box._obs = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && render(e.target)), { root: box, rootMargin: '800px 0px' });
+  holders.forEach((x) => box._obs.observe(x));
+  return holders;
+}
+function centerOn(box, holders, anchor) {
+  const t = holders[anchor.n - 1];
+  if (!t) return false;
+  box.scrollTop = Math.max(0, t.offsetTop + anchor.frac * t.offsetHeight - box.clientHeight / 2);
+  box.scrollLeft = Math.max(0, anchor.fx * box.scrollWidth - box.clientWidth / 2);
+  return true;
+}
+function buildEdDocView(m, anchor = null) {
+  const box = ED.docView;
+  ED.docFor = m.id;
+  ED.zLbl.textContent = `${Math.round((ED.docZoom || 1) * 100)} %`;
+  const W = Math.round(Math.max(200, box.clientWidth - 28) * (ED.docZoom || 1));
+  const holders = fillPdfView(box, R.pages, W, (hl, p) => {
+    // marcas de la página (la del comentario, más visible)
+    for (const mk of marksOfPage(p.num)) {
+      const c = tagById(mk.tag).color, cur = mk.id === m.id;
+      for (const [x, y, w, hh] of mk.rects) {
+        const el = h('i', { class: `ed-mark${cur ? ' cur' : ''}`, style: { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${hh * 100}%`, background: hexA(c, cur ? 0.45 : 0.25) } });
+        el.style.setProperty('--c', c);
+        hl.append(el);
+      }
+    }
+  });
   // tras el zoom: el mismo sitio que había en el centro
-  if (anchor && holders[anchor.n - 1]) {
-    const t = holders[anchor.n - 1];
-    box.scrollTop = Math.max(0, t.offsetTop + anchor.frac * t.offsetHeight - box.clientHeight / 2);
-    box.scrollLeft = Math.max(0, anchor.fx * box.scrollWidth - box.clientWidth / 2);
-    return;
-  }
+  if (anchor && centerOn(box, holders, anchor)) return;
   // abrir por donde está el fragmento
   const target = holders[m.page - 1];
   if (target) {
     const y = target.offsetTop + (m.rects?.[0]?.[1] || 0) * target.offsetHeight - box.clientHeight * 0.3;
     box.scrollTop = Math.max(0, y);
   }
+}
+const auxPosKey = (id) => `study-aux-pos-${id}`;
+function saveAuxPos() {
+  if (!ED?.auxReady || !ED.aux || ED.auxView.hidden) return;
+  const box = ED.auxView, y = box.scrollTop;
+  const pg = [...box.querySelectorAll('.ed-page')].find((x) => x.offsetTop + x.offsetHeight > y);
+  if (!pg) return;
+  try { localStorage.setItem(auxPosKey(ED.aux.id), JSON.stringify({ n: +pg.dataset.n, frac: Math.max(0, (y - pg.offsetTop) / pg.offsetHeight) })); } catch {}
+}
+async function buildEdAuxView(anchor = null) {
+  const box = ED.auxView, id = R.doc?.aux || '';
+  const run = (ED.auxRun = (ED.auxRun || 0) + 1);
+  ED.auxFor = id; ED.auxReady = false;
+  ED.zoomBox.hidden = true;
+  box._obs?.disconnect();
+  const msg = (text, withPick = false) => {
+    const kids = [svgIcon(ICON.clip), h('p', {}, text)];
+    if (withPick) {
+      const pick = h('button', { type: 'button', class: 'btn primary' }, T('auxPick'));
+      pick.addEventListener('click', () => auxDialog());
+      kids.push(pick);
+    }
+    box.replaceChildren(h('div', { class: 'aux-empty' }, ...kids));
+  };
+  const d = id ? await auxDoc() : null;
+  if (run !== ED.auxRun) return;
+  if (!d) { msg(T('auxNone'), true); return; }
+  if (!ED.aux || ED.aux.id !== d.id) {
+    msg(T('auxLoading'));
+    try {
+      const file = await getFile(d.id);
+      if (!file) throw new Error('Sin archivo');
+      const pdf = await pdfjsLib.getDocument({ data: file.data.slice(0) }).promise;
+      const pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const vp = page.getViewport({ scale: 1 });
+        pages.push({ num: i, w: vp.width, h: vp.height, page });
+      }
+      if (run !== ED.auxRun) { pdf.destroy(); return; }
+      ED.aux?.pdf.destroy();
+      ED.aux = { id: d.id, pdf, pages };
+    } catch (e) {
+      console.warn(e);
+      if (run === ED.auxRun) msg(T('auxErr'), true);
+      return;
+    }
+  }
+  if (box.hidden || !box.clientWidth) { ED.auxFor = null; return; } // se pintará al volver a la pestaña
+  ED.zLbl.textContent = `${Math.round(ED.auxZoom * 100)} %`;
+  const W = Math.round(Math.max(200, box.clientWidth - 28) * ED.auxZoom);
+  const holders = fillPdfView(box, ED.aux.pages, W);
+  ED.auxReady = true;
+  ED.zoomBox.hidden = ED.view !== 'aux';
+  if (anchor && centerOn(box, holders, anchor)) return;
+  // por donde se dejó la última vez
+  let pos = null;
+  try { pos = JSON.parse(localStorage.getItem(auxPosKey(d.id)) || 'null'); } catch {}
+  const t = pos && holders[pos.n - 1];
+  box.scrollLeft = 0;
+  box.scrollTop = t ? Math.max(0, t.offsetTop + (pos.frac || 0) * t.offsetHeight) : 0;
 }
 async function updatePreview() {
   if (!ED?.m) return;
@@ -3499,6 +3704,7 @@ function mmLayout() {
   if (!mm) return;
   document.body.classList.toggle('has-minimap', mmEnabled());
   if (!mmEnabled()) { mm.hidden = true; return; }
+  if (R.pages.some((p) => !p?.el)) { mmSoon(); return; } // las páginas aún se están creando
   mm.hidden = false;
   const track = $('#mmTrack'), W = track.clientWidth;
   const pagesEl = $('#pages');
@@ -3740,7 +3946,8 @@ async function applyRemoteToUI(changed) {
     if (!fresh) return;
     R.marks = await db.marksOf(R.doc.id);
     for (const p of R.pages) { drawMarks(p.num); renderSheet(p.num); }
-    for (const k of ['read', 'lang', 'name', 'desc']) R.doc[k] = fresh[k];
+    for (const k of ['read', 'lang', 'name', 'desc', 'aux']) R.doc[k] = fresh[k];
+    updateAuxButton();
     updateProgress(); for (const p of R.pages) refreshReadUI(p.num);
   }
 }
@@ -3943,6 +4150,7 @@ function init() {
   $('#zoomOut').addEventListener('click', () => zoomStep(-1));
   $('#btnExport').addEventListener('click', exportAnnotated);
   $('#btnLang').addEventListener('click', (e) => chooseLang(e.currentTarget));
+  $('#btnAux').addEventListener('click', (e) => auxClick(e.currentTarget));
   $('#btnNotes').addEventListener('click', () => setNotesHidden(!notesHidden()));
   setNotesHidden(localStorage.getItem('study-hide-notes') === '1', false);
   $('#tagCancel').addEventListener('click', () => { hidePopup(); clearSelection(); $('.draft-rect')?.remove(); });

@@ -116,7 +116,7 @@ svg:not(mjx-container svg) { width: 20px; height: 20px; fill: none; stroke: curr
 .reader-bar { padding-left: 8px; padding-right: 8px; gap: 8px; }
 .doc-title { flex: 1; min-width: 0; }
 .doc-title .title { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.doc-title .sub { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.doc-title .sub { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tools { display: flex; align-items: center; gap: 6px; }
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 2px; }
 .seg-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--muted); padding: 6px 10px; border-radius: 8px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
@@ -521,7 +521,8 @@ li.CodeMirror-hint-active { background: #1f5fbf; }
 .desc-count { display: block; text-align: right; color: var(--muted); font-size: 11.5px; margin: 4px 0 14px; }
 
 /* ---------- Buscador (centrado en la barra del lector) ---------- */
-.reader-bar { display: grid; grid-template-columns: 1fr minmax(180px, 360px) 1fr; align-items: center; }
+.reader-bar { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(100px, 360px) 1fr; align-items: center; }
+/* (la columna izquierda tiene mínimo: si no, en ventanas medianas el título y el botón de volver se quedaban sin sitio) */
 .rb-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .reader-bar .tools { justify-self: end; }
 #btnFind { display: none; }
@@ -676,4 +677,32 @@ body.notes-hidden #pages .sheet-holder { display: none; }
   .reader-bar .tools { grid-row: 2; justify-self: stretch; justify-content: space-between; }
   .reader-bar .icon-btn { height: 34px; }
   .reader-bar.finding .find { top: calc(6px + var(--safe-top)); }
+}
+
+/* ---------- Documento auxiliar ---------- */
+.aux-btn { flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 200px; height: 34px; padding: 0 11px 0 9px; margin-left: 4px;
+  border: 1px dashed var(--border); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.aux-btn:hover { background: var(--surface-2); color: var(--text); }
+.aux-btn svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.aux-btn .aux-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aux-btn.has { border-style: solid; color: var(--text); background: var(--surface-2); }
+.aux-btn.has svg { color: var(--accent); }
+/* con poco sitio (ventana estrecha o móvil): solo el clip, con un punto si hay auxiliar */
+@media (max-width: 1200px) {
+  .aux-btn { width: 34px; padding: 0; justify-content: center; position: relative; }
+  .aux-btn .aux-lbl { display: none; }
+  .aux-btn.has::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+}
+.aux-dialog .aux-up-row { margin-top: 10px; }
+.aux-upload { display: inline-flex; align-items: center; gap: 6px; }
+.aux-upload svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.te-tab-aux .short { display: none; }
+.te-auxview .aux-empty { margin: 40px auto; max-width: 320px; text-align: center; color: #5b6170; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.te-auxview .aux-empty svg { width: 30px; height: 30px; fill: none; stroke: #8a8f99; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.te-auxview .aux-empty p { margin: 0; }
+@media (max-width: 1000px) {
+  .te-tab-aux .long { display: none; }
+  .te-tab-aux .short { display: inline; }
+  .te-tabs { gap: 2px; padding-left: 6px; padding-right: 6px; }
+  .te-tab { padding: 5px 7px; letter-spacing: .05em; }
 }
