@@ -4226,6 +4226,9 @@ function init() {
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW', e));
   }
+  // ha arrancado bien: el vigilante de index.html ya no tiene que hacer nada
+  window.__studyReady = true;
+  try { sessionStorage.removeItem('study-rescue'); } catch {}
 }
 
 init();

@@ -1,5 +1,5 @@
 // Service worker: guarda la app en caché para usarla sin conexión
-const VERSION = 'study-app-v55';
+const VERSION = 'study-app-v56';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './latex.js', './config.js', './vendor/supabase.js', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/pdf-lib.min.js',
@@ -8,17 +8,21 @@ const ASSETS = [
   './vendor/codemirror/show-hint.js', './vendor/codemirror/show-hint.css',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon-maskable-512.png', './icons/favicon-32.png',
 ];
+// (cache: 'reload' = descargar del servidor, sin usar la caché del navegador: así nunca se mezclan versiones)
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
-// Red primero (para recibir actualizaciones), caché si no hay conexión
+// Red primero (para recibir actualizaciones), caché si no hay conexión.
+// cache: 'no-cache' = preguntar siempre al servidor si el archivo ha cambiado (GitHub Pages deja guardar
+// cada archivo 10 minutos en el navegador, y una mezcla de app.js nuevo con latex.js viejo no arranca).
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const req = e.request.mode === 'navigate' ? new Request(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }) : new Request(e.request, { cache: 'no-cache' });
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(req).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('./index.html')))
