@@ -130,7 +130,11 @@ const db = {
   getAll: (store) => tx(store, 'readonly', (s) => reqP(s.getAll())),
   keys: (store) => tx(store, 'readonly', (s) => reqP(s.getAllKeys())),
   get: (store, id) => tx(store, 'readonly', (s) => reqP(s.get(id))),
-  put: async (store, val) => { const r = await tx(store, 'readwrite', (s) => reqP(s.put(val))); if (SYNCED.has(store)) syncQueue(store, val.id, 'put'); return r; },
+  put: async (store, val) => {
+    // tiempo de estudio: cada dispositivo tiene su parte; no se pisa la de los demás
+    if (store === 'docs' && val?.id) { const cur = await tx('docs', 'readonly', (s) => reqP(s.get(val.id))).catch(() => null); if (cur?.time || val.time) val.time = mergeTime(cur?.time, val.time); }
+    const r = await tx(store, 'readwrite', (s) => reqP(s.put(val))); if (SYNCED.has(store)) syncQueue(store, val.id, 'put'); return r;
+  },
   del: async (store, id) => { const r = await tx(store, 'readwrite', (s) => reqP(s.delete(id))); if (SYNCED.has(store)) syncQueue(store, id, 'del'); return r; },
   // sin apuntar el cambio (para lo que llega de la nube)
   putRaw: (store, val) => tx(store, 'readwrite', (s) => reqP(s.put(val))),
@@ -141,6 +145,8 @@ const db = {
 };
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// identificador de este dispositivo (para el tiempo de estudio)
+const DEVICE = (() => { try { let d = localStorage.getItem('study-device'); if (!d) { d = uid(); localStorage.setItem('study-device', d); } return d; } catch { return 'este'; } })();
 const $ = (sel, el = document) => el.querySelector(sel);
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -182,6 +188,7 @@ const ICON = {
   clip: '<path d="M20 11.5l-8.2 8.2a5 5 0 01-7.1-7.1l8.6-8.6a3.3 3.3 0 014.7 4.7l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9"/>',
   swap: '<path d="M4 8h13M13.5 4.5L17 8l-3.5 3.5"/><path d="M20 16H7M10.5 12.5L7 16l3.5 3.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   chevDown: '<path d="M7 10l5 5 5-5"/>',
   letters: '<g style="fill:var(--ico-accent);stroke:none;font:700 6.6px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.6" y="8.9">a)</text><text x="4.6" y="14.6">b)</text><text x="4.6" y="20.3">c)</text></g><path d="M10.5 6.3h11M10.5 12h11M10.5 17.7h11"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
@@ -339,6 +346,7 @@ async function renderLibrary() {
         ...(d.pageCount > 1 ? [{ label: 'Fisionar (separar en partes)…', icon: ICON.split, fn: () => splitDialog(d.id) }] : []),
         { label: 'Cambiar nombre', icon: ICON.edit, fn: () => renameDoc(d) },
         { label: d.desc ? 'Editar descripción' : 'Añadir descripción', icon: ICON.note, fn: () => editDescription('docs', d.id) },
+        { label: 'Tiempo de estudio…', icon: ICON.clock, fn: () => timeDialog(d.id) },
         { label: 'Mover a la papelera', icon: ICON.trash, danger: true, fn: () => deleteDoc(d) },
       ]);
     });
@@ -349,7 +357,8 @@ async function renderLibrary() {
         d.desc ? h('div', { class: 'desc', title: d.desc }, d.desc) : null,
         h('div', { class: 'bar' }, h('div', { style: { width: `${p * 100}%` } })),
         h('div', { class: 'meta' },
-          h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.${counts[d.id] ? ` · ${counts[d.id]} notas` : ''}`, localFiles && !localFiles.has(d.id) ? h('span', { class: 'cloud-only', title: 'Está en la nube: se descargará al abrirlo' }, svgIcon(ICON.cloud)) : null),
+          h('span', {}, `${fmtPct(p)} leído · ${d.pageCount || '?'} pág.${counts[d.id] ? ` · ${counts[d.id]} notas` : ''}`,
+            timeTotals(d).total >= 60 ? h('span', { class: 'card-time', title: 'Tiempo de estudio' }, ' · ', svgIcon(ICON.clock), fmtDur(timeTotals(d).total)) : null, localFiles && !localFiles.has(d.id) ? h('span', { class: 'cloud-only', title: 'Está en la nube: se descargará al abrirlo' }, svgIcon(ICON.cloud)) : null),
           more),
       ),
     );
@@ -1139,6 +1148,7 @@ async function openDoc(id) {
     setMode('text');
     updateLangButton();
     updateAuxButton();
+    timeStart();
     labelTagRow();
     resetFind();
     await buildPages();
@@ -1169,6 +1179,191 @@ async function computeCharsInBackground() {
   doc.pageChars = chars; doc.pageCount = pdf.numPages;
   await db.put('docs', doc);
   updateProgress();
+}
+
+/* =========================================================
+   TIEMPO DE ESTUDIO
+   Cuenta mientras el documento está abierto y a la vista. Si pasan 10 minutos sin actividad
+   (ratón, teclado, desplazamiento, toques), se pausa y se descuentan esos 10 minutos.
+   doc.time = { <dispositivo>: { t: segundos, d: { 'AAAA-MM-DD': segundos }, at: última modificación } }
+   Cada dispositivo solo cambia su parte (así la sincronización nunca pierde tiempo de otro);
+   los ajustes manuales también van en la parte de este dispositivo (pueden ser negativos).
+   ========================================================= */
+const IDLE_MS = 10 * 60 * 1000;
+const TIME = { timer: null, last: 0, lastAct: 0, sinceAct: {}, paused: false, unsaved: 0 };
+const dayKey = (t = Date.now()) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const r1 = (x) => Math.round(x * 10) / 10;
+// fusiona dos copias de doc.time: para cada dispositivo, la más reciente
+function mergeTime(a, b) {
+  const out = {};
+  for (const src of [a, b]) for (const [dev, bk] of Object.entries(src || {})) if (bk && (!out[dev] || (bk.at || 0) >= (out[dev].at || 0))) out[dev] = bk;
+  return out;
+}
+function timeTotals(doc) {
+  let total = 0; const days = {};
+  for (const bk of Object.values(doc?.time || {})) {
+    total += bk.t || 0;
+    for (const [k, v] of Object.entries(bk.d || {})) days[k] = (days[k] || 0) + v;
+  }
+  for (const k of Object.keys(days)) days[k] = Math.max(0, days[k]);
+  return { total: Math.max(0, total), days };
+}
+function addTime(doc, sec, day = dayKey()) {
+  if (!doc || !sec) return;
+  doc.time = doc.time || {};
+  const bk = doc.time[DEVICE] || (doc.time[DEVICE] = { t: 0, d: {} });
+  bk.t = r1((bk.t || 0) + sec);
+  bk.d = bk.d || {};
+  bk.d[day] = r1((bk.d[day] || 0) + sec);
+  if (!bk.d[day]) delete bk.d[day];
+  const ks = Object.keys(bk.d).sort();
+  while (ks.length > 400) delete bk.d[ks.shift()];
+  bk.at = Date.now();
+}
+function fmtDur(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60);
+  return hh ? `${hh} h ${String(mm).padStart(2, '0')} min` : `${mm} min`;
+}
+const timeCounting = () => !!R.doc && !$('#reader').hidden && document.visibilityState === 'visible';
+function timeTick() {
+  const now = Date.now();
+  const dt = Math.min(Math.max(0, now - TIME.last), 5000); // si el ordenador se ha dormido, no se cuenta
+  TIME.last = now;
+  if (!timeCounting()) return;
+  if (now - TIME.lastAct >= IDLE_MS) { if (!TIME.paused) timeIdle(); return; }
+  const sec = dt / 1000, day = dayKey(now);
+  addTime(R.doc, sec, day);
+  TIME.sinceAct[day] = (TIME.sinceAct[day] || 0) + sec;
+  TIME.unsaved += sec;
+  if (TIME.unsaved >= 60) timeSave();
+  timeLabel();
+}
+// 10 minutos sin actividad: se pausa y se quita lo contado desde la última actividad
+function timeIdle() {
+  TIME.paused = true;
+  for (const [day, sec] of Object.entries(TIME.sinceAct)) addTime(R.doc, -sec, day);
+  TIME.sinceAct = {};
+  timeSave(); timeLabel();
+}
+function timeActivity() {
+  const now = Date.now();
+  if (now - TIME.lastAct < 1000 && !TIME.paused) return;
+  TIME.lastAct = now; TIME.sinceAct = {};
+  if (TIME.paused) { TIME.paused = false; TIME.last = now; timeLabel(); }
+}
+function timeSave() {
+  TIME.unsaved = 0;
+  if (R.doc) db.put('docs', R.doc).catch((e) => console.warn('tiempo', e));
+}
+function timeStart() {
+  clearInterval(TIME.timer);
+  const now = Date.now();
+  Object.assign(TIME, { last: now, lastAct: now, sinceAct: {}, paused: false, unsaved: 0 });
+  TIME.timer = setInterval(timeTick, 1000);
+  timeLabel();
+}
+function timeStop() {
+  if (!TIME.timer) return;
+  timeTick();
+  clearInterval(TIME.timer); TIME.timer = null;
+  if (TIME.unsaved > 0) timeSave();
+}
+function timeLabel() {
+  const b = $('#timeBtn');
+  if (!b || !R.doc) return;
+  const t = timeTotals(R.doc).total;
+  const txt = fmtDur(t);
+  if (b.dataset.txt !== txt) { b.dataset.txt = txt; b.lastChild.textContent = txt; }
+  b.classList.toggle('paused', TIME.paused);
+  b.title = TIME.paused ? 'Tiempo de estudio (en pausa: 10 minutos sin actividad). Clic para ver el detalle o corregirlo.' : 'Tiempo de estudio de este documento. Clic para ver el detalle o corregirlo.';
+}
+function initTime() {
+  const b = $('#timeBtn');
+  b.replaceChildren(svgIcon(ICON.clock), document.createTextNode('0 min'));
+  b.addEventListener('click', () => R.doc && timeDialog(R.doc.id));
+  for (const ev of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart', 'scroll']) window.addEventListener(ev, timeActivity, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { TIME.last = Date.now(); timeActivity(); }
+    else if (R.doc && TIME.unsaved > 0) timeSave();
+  });
+  window.addEventListener('pagehide', () => { if (R.doc && TIME.unsaved > 0) timeSave(); });
+}
+// Ventana con el detalle y los ajustes manuales
+async function timeDialog(id) {
+  const openDocOf = () => (R.doc?.id === id ? R.doc : null);
+  let doc = openDocOf() || await db.get('docs', id);
+  if (!doc) return;
+  const big = h('div', { class: 'time-big' }), today = h('div', { class: 'time-today' }), week = h('div', { class: 'time-week' });
+  const hIn = h('input', { type: 'number', min: '0', max: '999', step: '1', value: '0', class: 'time-in', 'aria-label': 'Horas' });
+  const mIn = h('input', { type: 'number', min: '0', max: '59', step: '1', value: '15', class: 'time-in', 'aria-label': 'Minutos' });
+  const add = h('button', { type: 'button', class: 'btn primary' }, svgIcon(ICON.plus), 'Añadir');
+  const sub = h('button', { type: 'button', class: 'btn' }, svgIcon('<path d="M5 12h14"/>'), 'Quitar');
+  const reset = h('button', { type: 'button', class: 'btn ghost danger time-reset' }, 'Poner a cero');
+  const close = h('button', { type: 'button', class: 'btn primary', autofocus: '' }, 'Listo'); // (sin abrir el teclado del móvil)
+  const msg = h('p', { class: 'time-msg', 'aria-live': 'polite' });
+  const draw = () => {
+    doc = openDocOf() || doc;
+    const { total, days } = timeTotals(doc);
+    big.textContent = fmtDur(total);
+    today.textContent = `Hoy: ${fmtDur(days[dayKey()] || 0)}${openDocOf() && TIME.paused ? ' · en pausa (sin actividad)' : ''}`;
+    // últimos 7 días
+    const list = [];
+    for (let k = 6; k >= 0; k--) { const t = new Date(); t.setHours(12, 0, 0, 0); t.setDate(t.getDate() - k); list.push([t, days[dayKey(t.getTime())] || 0]); }
+    const max = Math.max(60, ...list.map((x) => x[1]));
+    week.replaceChildren(...list.map(([t, v]) => h('div', { class: 'time-day' },
+      h('span', { class: 'time-day-lbl' }, t.toLocaleDateString('es', { weekday: 'short', day: 'numeric' })),
+      h('span', { class: 'time-day-bar' }, h('i', { style: { width: `${v >= 60 ? (v / max) * 100 : 0}%` } })),
+      h('span', { class: 'time-day-val' }, v >= 60 ? fmtDur(v) : '–'))));
+  };
+  const amount = () => Math.max(0, (parseInt(hIn.value, 10) || 0) * 3600 + (parseInt(mIn.value, 10) || 0) * 60);
+  const apply = async (sign) => {
+    let sec = amount();
+    if (!sec) { msg.textContent = 'Escribe cuánto tiempo.'; return; }
+    doc = openDocOf() || doc;
+    if (sign < 0) sec = Math.min(sec, timeTotals(doc).total);
+    if (!sec) { msg.textContent = 'No hay tiempo que quitar.'; return; }
+    addTime(doc, sign * sec);
+    await db.put('docs', doc);
+    msg.textContent = `${sign > 0 ? 'Añadido' : 'Quitado'}: ${fmtDur(sec)}.`;
+    draw(); timeLabel();
+  };
+  add.addEventListener('click', () => apply(1));
+  sub.addEventListener('click', () => apply(-1));
+  reset.addEventListener('click', async () => {
+    const ok = await askChoice({ title: 'Poner a cero', text: `¿Seguro que quieres borrar todo el tiempo de estudio de «${doc.name}»?`, ok: 'Poner a cero', cancel: 'Cancelar' });
+    if (!ok) return;
+    doc = openDocOf() || doc;
+    // se compensa en la parte de este dispositivo: menos lo de los demás (así vale también para lo contado en otros)
+    let ot = 0; const od = {};
+    for (const [dev, bk] of Object.entries(doc.time || {})) {
+      if (dev === DEVICE) continue;
+      ot += bk.t || 0;
+      for (const [k, v] of Object.entries(bk.d || {})) od[k] = (od[k] || 0) + v;
+    }
+    doc.time = doc.time || {};
+    doc.time[DEVICE] = { t: r1(-ot), d: Object.fromEntries(Object.entries(od).map(([k, v]) => [k, r1(-v)]).filter(([, v]) => v)), at: Date.now() };
+    if (openDocOf()) TIME.sinceAct = {};
+    await db.put('docs', doc);
+    msg.textContent = 'Contador puesto a cero.';
+    draw(); timeLabel();
+  });
+  const dlg = h('dialog', { class: 'name-dialog time-dialog' },
+    h('form', { method: 'dialog', onsubmit: (e) => e.preventDefault() },
+      h('h3', {}, 'Tiempo de estudio'),
+      h('p', { class: 'merge-sub' }, doc.name),
+      big, today, week,
+      h('div', { class: 'time-adjust' },
+        h('div', { class: 'name-label' }, 'Añadir o quitar tiempo (se apunta en el día de hoy)'),
+        h('div', { class: 'time-row' }, h('span', { class: 'time-amt' }, hIn, h('span', {}, 'h'), mIn, h('span', {}, 'min')), h('span', { class: 'time-btns' }, sub, add)),
+        msg),
+      h('div', { class: 'dialog-actions' }, reset, h('span', { class: 'spacer' }), close)));
+  close.addEventListener('click', () => dlg.close());
+  const tick = setInterval(draw, 2000);
+  dlg.addEventListener('close', () => { clearInterval(tick); dlg.remove(); if (!$('#library').hidden) renderLibrary(); });
+  document.body.append(dlg);
+  draw();
+  dlg.showModal();
 }
 
 /* =========================================================
@@ -1469,6 +1664,7 @@ function chooseLang(anchor) {
 }
 
 function closeReader(push = true) {
+  timeStop();
   resetFind();
   mmReset();
   document.body.classList.remove('has-minimap');
@@ -3886,6 +4082,23 @@ async function runSync() {
     if (SYNC.again) scheduleSync(300);
   }
 }
+async function mergeRemoteTime(docRows) {
+  for (let i = 0; i < docRows.length; i += 100) {
+    const part = docRows.slice(i, i + 100);
+    const { data, error } = await SYNC.sb.from('items').select('id,time:data->time').eq('store', 'docs').in('id', part.map((r) => r.id));
+    if (error) { console.warn('tiempo remoto', error); continue; }
+    const remote = new Map((data || []).map((x) => [String(x.id), x.time]));
+    for (const row of part) {
+      const rt = remote.get(row.id);
+      if (!rt) continue;
+      row.data.time = mergeTime(rt, row.data.time);
+      // que también lo tengan la copia local y el documento abierto
+      const loc = await db.get('docs', row.id);
+      if (loc) { loc.time = mergeTime(loc.time, row.data.time); await db.putRaw('docs', loc); }
+      if (R.doc?.id === row.id) { R.doc.time = mergeTime(R.doc.time, row.data.time); timeLabel(); }
+    }
+  }
+}
 async function pushOutbox() {
   const items = (await db.getAll('outbox')).sort((a, b) => a.t - b.t);
   if (!items.length) return;
@@ -3910,6 +4123,8 @@ async function pushOutbox() {
     const v = it.op === 'put' ? await db.get(it.store, it.id) : null;
     rows.push({ it, row: { store: it.store, id: String(it.id), data: v || null, deleted: !v } });
   }
+  // tiempo de estudio: unir con lo que ya hay en el servidor (la parte de los otros dispositivos)
+  await mergeRemoteTime(rows.filter((r) => r.it.store === 'docs' && r.row.data).map((r) => r.row));
   let batch = [], size = 0;
   const flush = async () => {
     if (!batch.length) return;
@@ -3945,7 +4160,10 @@ async function pullChanges() {
       if (row.deleted || !row.data) {
         await db.delRaw(row.store, row.id);
         if (row.store === 'docs') await db.delRaw('files', row.id);
-      } else await db.putRaw(row.store, row.data);
+      } else {
+        if (row.store === 'docs' && row.data) { const cur = await db.get('docs', row.id).catch(() => null); if (cur?.time || row.data.time) row.data.time = mergeTime(cur?.time, row.data.time); }
+        await db.putRaw(row.store, row.data);
+      }
       changed.add(row.store === 'marks' ? (row.data?.docId || '*') : row.store === 'docs' ? row.id : '*');
       changed.add('*');
     }
@@ -3965,7 +4183,8 @@ async function applyRemoteToUI(changed) {
     R.marks = await db.marksOf(R.doc.id);
     for (const p of R.pages) { drawMarks(p.num); renderSheet(p.num); }
     for (const k of ['read', 'lang', 'name', 'desc', 'aux']) R.doc[k] = fresh[k];
-    updateAuxButton();
+    R.doc.time = mergeTime(fresh.time, R.doc.time);
+    updateAuxButton(); timeLabel();
     updateProgress(); for (const p of R.pages) refreshReadUI(p.num);
   }
 }
@@ -4160,6 +4379,7 @@ function init() {
   initFind();
   initAuthUI();
   initMinimap();
+  initTime();
   $('#fileInput').addEventListener('change', (e) => { importFiles(e.target.files); e.target.value = ''; });
   $('#btnBack').addEventListener('click', () => closeReader());
   $('#modeText').addEventListener('click', () => setMode('text'));

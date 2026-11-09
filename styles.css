@@ -711,3 +711,31 @@ body.notes-hidden #pages .sheet-holder { display: none; }
 .te-paper span.tx-caret { display: inline-block; width: 0; height: 1.15em; margin: 0 -1px; border-left: 2px solid #e0245e; vertical-align: -0.22em; pointer-events: none; }
 .te-paper g.tx-caret, .te-paper g.tx-caret rect, .te-paper .tx-caret rect { fill: #e0245e; stroke: none; }
 .te-paper p.tx-p:has(> span.tx-caret:only-child) { min-height: 1.2em; }
+
+/* ---------- Tiempo de estudio ---------- */
+.time-btn { border: 0; background: transparent; color: inherit; font: inherit; padding: 0; margin: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; vertical-align: bottom; }
+.time-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.time-btn:hover { color: var(--text); text-decoration: underline; }
+.time-btn.paused { opacity: .55; }
+.time-btn.paused svg { stroke-dasharray: 2 2; }
+.card-time { white-space: nowrap; }
+.card-time svg { width: 12px; height: 12px; vertical-align: -1px; margin-right: 2px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.time-dialog { width: min(440px, calc(100vw - 32px)); max-width: none; }
+.time-dialog .merge-sub { margin: 2px 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time-big { font-size: 30px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.time-today { color: var(--muted); font-size: 13.5px; margin: 2px 0 14px; }
+.time-week { display: grid; gap: 5px; margin-bottom: 16px; }
+.time-day { display: grid; grid-template-columns: 62px 1fr 86px; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.time-day-bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.time-day-bar i { display: block; height: 100%; background: var(--accent-2); border-radius: 4px; }
+.time-day-val { text-align: right; font-variant-numeric: tabular-nums; }
+.time-adjust { border-top: 1px solid var(--border); padding-top: 12px; }
+.time-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.time-amt { display: inline-flex; align-items: center; gap: 6px; }
+.time-btns { display: inline-flex; gap: 6px; margin-left: auto; }
+.time-in { width: 58px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; text-align: right; }
+.time-row .btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.time-msg { min-height: 1.2em; margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.time-dialog .dialog-actions { align-items: center; }
+.time-dialog .dialog-actions .spacer { flex: 1; }
+.time-reset { color: #c0392b; }
