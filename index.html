@@ -56,6 +56,10 @@
       <h1>Study App</h1>
     </div>
     <div class="actions">
+      <button class="btn" id="btnMusic" title="Música para estudiar">
+        <svg viewBox="0 0 24 24"><path d="M9 18V5.5l11-2.5v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>
+        <span class="lbl">Música</span><i class="mus-dot" aria-hidden="true"></i>
+      </button>
       <button class="btn ghost" id="btnBackup" title="Copia de seguridad">
         <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         <span class="lbl">Copia</span>
@@ -110,6 +114,35 @@
       <label class="btn primary" for="fileInput">Añadir PDF</label>
     </div>
   </main>
+</div>
+
+<!-- ============ MÚSICA (solo en este dispositivo) ============ -->
+<div id="music" class="view" hidden>
+  <header class="topbar">
+    <div class="brand mus-brand">
+      <button class="icon-btn" id="musBack" type="button" title="Volver a la biblioteca" aria-label="Volver">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <svg class="mus-logo" viewBox="0 0 24 24"><path d="M9 18V5.5l11-2.5v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>
+      <h1 id="musTitle">Música</h1>
+    </div>
+    <div class="actions">
+      <button class="btn" id="musNewFolder" type="button" title="Nueva carpeta de música">
+        <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/><path d="M12 10.5v5M9.5 13h5"/></svg>
+        <span class="lbl">Nueva carpeta</span>
+      </button>
+      <button class="btn" id="musFolderMore" type="button" title="Opciones de la carpeta" aria-label="Opciones de la carpeta" hidden>
+        <svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg>
+      </button>
+      <label class="btn primary" for="audioInput" id="musAdd" hidden>
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="add-pdf-lbl">Añadir audios</span><span class="add-pdf-short">Audios</span>
+      </label>
+      <input type="file" id="audioInput" accept=".mp3,.m4a,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac" multiple hidden>
+    </div>
+  </header>
+  <main class="libmain musmain" id="musMain"></main>
+  <div class="mus-player" id="musPlayer"></div>
 </div>
 
 <!-- ============ ACCESO (cuentas) ============ -->
@@ -169,6 +202,9 @@
         <span id="zoomLabel">100 %</span>
         <button class="icon-btn" id="zoomIn" title="Ampliar" aria-label="Ampliar"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
+      <button class="icon-btn mus-btn" id="btnReaderMusic" type="button" title="Música" aria-label="Música">
+        <svg viewBox="0 0 24 24"><path d="M9 18V5.5l11-2.5v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></svg>
+      </button>
       <button class="icon-btn notes-toggle" id="btnNotes" type="button" title="Ocultar las páginas de notas" aria-label="Ocultar las páginas de notas" aria-pressed="false">
         <svg viewBox="0 0 24 24"><path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M14.5 3.5V7.5h4"/><path d="M9 11h6M9 14.5h6M9 18h3.5"/><path class="slash" d="M3.5 3.5l17 17"/></svg>
       </button>

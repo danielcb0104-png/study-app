@@ -96,7 +96,7 @@ let dbp = null;
 function openDB() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 3);
+    const req = indexedDB.open(DB_NAME, 4);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'id' });
@@ -105,8 +105,12 @@ function openDB() {
       if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
       // v3: cambios pendientes de subir a la nube
       if (!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox', { keyPath: 'k' });
+      // v4: música (solo en este dispositivo)
+      if (!db.objectStoreNames.contains('mfolders')) db.createObjectStore('mfolders', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('tracks')) db.createObjectStore('tracks', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('audio')) db.createObjectStore('audio', { keyPath: 'id' });
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { const d = req.result; d.onversionchange = () => d.close(); resolve(d); };
     req.onerror = () => reject(req.error);
   });
   return dbp;
@@ -189,6 +193,15 @@ const ICON = {
   swap: '<path d="M4 8h13M13.5 4.5L17 8l-3.5 3.5"/><path d="M20 16H7M10.5 12.5L7 16l3.5 3.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  music: '<path d="M9 18V5.5l11-2.5v13"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
+  play: '<path d="M8 5.5v13l10.5-6.5z" style="fill:currentColor"/>',
+  pause: '<path d="M8.5 5.5v13M15.5 5.5v13" style="stroke-width:3.2"/>',
+  next: '<path d="M5.5 6l9 6-9 6z" style="fill:currentColor"/><path d="M18 6v12" style="stroke-width:2.4"/>',
+  prev: '<path d="M18.5 6l-9 6 9 6z" style="fill:currentColor"/><path d="M6 6v12" style="stroke-width:2.4"/>',
+  shuffle: '<path d="M3 7h3.5c5 0 6 10 11 10H21M3 17h3.5c2 0 3.2-1.6 4.3-3.5M14 9.4c1-1.4 2-2.4 3.5-2.4H21M18 4l3 3-3 3M18 14l3 3-3 3"/>',
+  repeat: '<path d="M4 11V9.5A3.5 3.5 0 017.5 6H20M17 3l3 3-3 3M20 13v1.5a3.5 3.5 0 01-3.5 3.5H4M7 21l-3-3 3-3"/>',
+  repeatOne: '<path d="M4 11V9.5A3.5 3.5 0 017.5 6H20M17 3l3 3-3 3M20 13v1.5a3.5 3.5 0 01-3.5 3.5H4M7 21l-3-3 3-3"/><path d="M11 10.5l1.5-1v5" style="stroke-width:1.8"/>',
+  volume: '<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/>',
   chevDown: '<path d="M7 10l5 5 5-5"/>',
   letters: '<g style="fill:var(--ico-accent);stroke:none;font:700 6.6px -apple-system,system-ui,sans-serif" text-anchor="middle"><text x="4.6" y="8.9">a)</text><text x="4.6" y="14.6">b)</text><text x="4.6" y="20.3">c)</text></g><path d="M10.5 6.3h11M10.5 12h11M10.5 17.7h11"/>',
   image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4.5 3.5"/>',
@@ -1367,6 +1380,466 @@ async function timeDialog(id) {
 }
 
 /* =========================================================
+   MÚSICA para estudiar — solo en este dispositivo (no se sincroniza ni entra en la copia)
+   mfolders: {id, name, order: [trackId…], createdAt}
+   tracks:   {id, folderId, name, type, size, duration, addedAt}   (datos)
+   audio:    {id, blob}                                              (el archivo)
+   ========================================================= */
+const MUS = { folderId: null }; // carpeta abierta en el apartado Música (null = lista de carpetas)
+const MP = { audio: null, queue: [], order: [], idx: -1, folderId: null, folderName: '', track: null, url: null, errors: 0, unlocked: false,
+  listeners: new Set(), shuffle: false, repeat: 'all', volume: 1 };
+(() => { try { const s = JSON.parse(localStorage.getItem('study-music') || '{}'); MP.shuffle = !!s.shuffle; MP.repeat = ['all', 'one', 'off'].includes(s.repeat) ? s.repeat : 'all'; MP.volume = typeof s.volume === 'number' ? s.volume : 1; } catch {} })();
+const mpSavePrefs = () => { try { localStorage.setItem('study-music', JSON.stringify({ shuffle: MP.shuffle, repeat: MP.repeat, volume: MP.volume })); } catch {} };
+const isAudioFile = (f) => /\.(mp3|m4a)$/i.test(f.name) || /^audio\/(mpeg|mp3|mp4|x-m4a|aac)$/.test(f.type);
+const fmtTime = (s) => { s = Math.max(0, Math.floor(s || 0)); const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60; return hh ? `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}` : `${mm}:${String(ss).padStart(2, '0')}`; };
+const fmtLen = (s) => { s = Math.round(s || 0); if (s < 60) return `${s} s`; const hh = Math.floor(s / 3600), mm = Math.round((s % 3600) / 60); return hh ? `${hh} h ${String(mm).padStart(2, '0')} min` : `${mm} min`; };
+const audiosTxt = (n) => `${n} audio${n === 1 ? '' : 's'}`;
+
+async function musFolders() { return (await db.getAll('mfolders')).sort(byName); }
+async function musTracksOf(folder, all = null) {
+  all = all || await db.getAll('tracks');
+  const mine = all.filter((t) => t.folderId === folder.id);
+  const byId = new Map(mine.map((t) => [t.id, t]));
+  const ordered = (folder.order || []).map((id) => byId.get(id)).filter(Boolean);
+  for (const t of mine) if (!ordered.includes(t)) ordered.push(t);
+  return ordered;
+}
+
+/* ---------- Reproductor ---------- */
+function mpAudio() {
+  if (MP.audio) return MP.audio;
+  const a = (MP.audio = new Audio());
+  a.preload = 'auto';
+  a.volume = MP.volume;
+  a.addEventListener('timeupdate', () => mpEmit('time'));
+  for (const ev of ['play', 'pause', 'loadedmetadata']) a.addEventListener(ev, () => mpEmit());
+  a.addEventListener('ended', () => mpNext(true));
+  a.addEventListener('error', () => {
+    if (!MP.track || !a.getAttribute('src') || a.src.startsWith('data:')) return;
+    MP.errors++;
+    toast(`No se pudo reproducir «${MP.track.name}»`);
+    if (MP.errors < MP.queue.length) mpNext(true); else mpStop();
+  });
+  if ('mediaSession' in navigator) {
+    const ms = navigator.mediaSession;
+    for (const [act, fn] of [['play', () => mpToggle(true)], ['pause', () => mpToggle(false)], ['previoustrack', () => mpPrev()], ['nexttrack', () => mpNext(false)]]) {
+      try { ms.setActionHandler(act, fn); } catch {}
+    }
+  }
+  return a;
+}
+// iPhone/iPad solo dejan sonar audio si la primera vez se pulsa algo: se «desbloquea» en ese mismo clic
+function mpUnlock() {
+  const a = mpAudio();
+  if (MP.unlocked || MP.track) return;
+  MP.unlocked = true;
+  a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+  a.play().catch(() => {});
+}
+function mpEmit(kind) { for (const f of MP.listeners) { try { f(kind); } catch (e) { console.warn(e); } } musIndicators(); }
+function shuffled(ids, first = null) {
+  const a = ids.filter((x) => x !== first);
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return first && ids.includes(first) ? [first, ...a] : a;
+}
+async function mpPlayFolder(folderId, startId = null, shuffle = null) {
+  const f = await db.get('mfolders', folderId);
+  if (!f) return;
+  const tracks = await musTracksOf(f);
+  if (!tracks.length) { toast('Esta carpeta todavía no tiene audios'); return; }
+  if (shuffle != null) { MP.shuffle = shuffle; mpSavePrefs(); }
+  MP.folderId = f.id; MP.folderName = f.name;
+  MP.order = tracks.map((t) => t.id);
+  MP.queue = MP.shuffle ? shuffled(MP.order, startId) : [...MP.order];
+  MP.idx = startId ? Math.max(0, MP.queue.indexOf(startId)) : 0;
+  MP.errors = 0;
+  await mpLoad(true);
+}
+async function mpLoad(play = true) {
+  const a = mpAudio();
+  while (MP.queue.length) {
+    const id = MP.queue[MP.idx];
+    const [t, f] = await Promise.all([db.get('tracks', id), db.get('audio', id)]);
+    if (t && f?.blob) {
+      if (MP.url) URL.revokeObjectURL(MP.url);
+      MP.url = URL.createObjectURL(f.blob);
+      MP.track = t;
+      a.src = MP.url;
+      if ('mediaSession' in navigator && window.MediaMetadata) {
+        try { navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: MP.folderName || '', album: 'Study App' }); } catch {}
+      }
+      mpEmit('track');
+      if (play) { try { await a.play(); } catch (e) { console.warn('play', e); mpEmit(); } }
+      return;
+    }
+    // el audio ya no existe: fuera de la cola
+    MP.queue.splice(MP.idx, 1); MP.order = MP.order.filter((x) => x !== id);
+    if (MP.idx >= MP.queue.length) MP.idx = 0;
+  }
+  mpStop();
+}
+function mpStop() {
+  const a = MP.audio;
+  if (a) { a.pause(); a.removeAttribute('src'); a.load(); }
+  if (MP.url) URL.revokeObjectURL(MP.url);
+  Object.assign(MP, { url: null, track: null, queue: [], order: [], idx: -1, folderId: null, folderName: '' });
+  if ('mediaSession' in navigator) { try { navigator.mediaSession.metadata = null; } catch {} }
+  mpEmit('track');
+}
+function mpToggle(force) {
+  const a = MP.audio;
+  if (!a || !MP.track) return;
+  const play = force ?? a.paused;
+  if (play) a.play().catch((e) => console.warn(e)); else a.pause();
+}
+async function mpNext(auto = false) {
+  if (!MP.queue.length) return;
+  const a = mpAudio();
+  if (auto && MP.repeat === 'one') { a.currentTime = 0; a.play().catch(() => {}); return; }
+  if (MP.idx + 1 < MP.queue.length) MP.idx++;
+  else if (auto && MP.repeat === 'off') { a.pause(); a.currentTime = 0; mpEmit(); return; } // fin de la carpeta
+  else { if (MP.shuffle) MP.queue = shuffled(MP.order); MP.idx = 0; }
+  await mpLoad(true);
+}
+async function mpPrev() {
+  const a = MP.audio;
+  if (!MP.queue.length || !a) return;
+  if (a.currentTime > 3) { a.currentTime = 0; return; }
+  MP.idx = (MP.idx - 1 + MP.queue.length) % MP.queue.length;
+  await mpLoad(!a.paused);
+}
+function mpReshuffle() {
+  if (!MP.queue.length) return;
+  const cur = MP.queue[MP.idx];
+  MP.queue = MP.shuffle ? shuffled(MP.order, cur) : [...MP.order];
+  MP.idx = Math.max(0, MP.queue.indexOf(cur));
+}
+// la carpeta que suena ha cambiado (orden, audios añadidos o quitados)
+async function mpFolderChanged(folderId) {
+  if (MP.folderId !== folderId) return;
+  const f = await db.get('mfolders', folderId);
+  if (!f) { mpStop(); return; }
+  MP.folderName = f.name;
+  const ids = (await musTracksOf(f)).map((t) => t.id);
+  const cur = MP.track?.id;
+  MP.order = ids;
+  if (!MP.shuffle) MP.queue = [...ids];
+  else MP.queue = [...MP.queue.filter((x) => ids.includes(x)), ...ids.filter((x) => !MP.queue.includes(x))];
+  if (cur && ids.includes(cur)) MP.idx = MP.queue.indexOf(cur);
+  else if (cur) { // se ha quitado el que sonaba: el siguiente
+    if (!MP.queue.length) { mpStop(); return; }
+    const was = !MP.audio.paused;
+    MP.idx = Math.min(Math.max(0, MP.idx), MP.queue.length - 1);
+    await mpLoad(was);
+    return;
+  }
+  if ('mediaSession' in navigator && window.MediaMetadata && MP.track) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: MP.track.name, artist: MP.folderName, album: 'Study App' }); } catch {} }
+  mpEmit('track');
+}
+// Controles (se usan abajo en «Música» y en la ventanita del lector)
+function buildPlayer(box, mode) {
+  const title = h('div', { class: 'mp-title' }), sub = h('div', { class: 'mp-sub' });
+  const seek = h('input', { type: 'range', min: '0', max: '1000', value: '0', class: 'mp-seek', 'aria-label': 'Posición' });
+  const tCur = h('span', { class: 'mp-t' }, '0:00'), tDur = h('span', { class: 'mp-t' }, '0:00');
+  const btn = (icon, label, fn, cls = '') => { const x = h('button', { type: 'button', class: `icon-btn mp-btn ${cls}`, title: label, 'aria-label': label }, svgIcon(icon)); x.addEventListener('click', fn); return x; };
+  const bShuf = btn(ICON.shuffle, 'Aleatorio', () => { MP.shuffle = !MP.shuffle; mpReshuffle(); mpSavePrefs(); mpEmit(); });
+  const bPrev = btn(ICON.prev, 'Anterior', () => mpPrev());
+  const bPlay = btn(ICON.play, 'Reproducir', () => mpToggle(), 'mp-play');
+  const bNext = btn(ICON.next, 'Siguiente', () => mpNext(false));
+  const bRep = btn(ICON.repeat, 'Repetir', () => { MP.repeat = { all: 'one', one: 'off', off: 'all' }[MP.repeat]; mpSavePrefs(); mpEmit(); });
+  const vol = h('input', { type: 'range', min: '0', max: '1', step: '0.02', value: String(MP.volume), class: 'mp-vol', 'aria-label': 'Volumen' });
+  vol.addEventListener('input', () => { MP.volume = +vol.value; if (MP.audio) MP.audio.volume = MP.volume; mpSavePrefs(); });
+  let seeking = false;
+  seek.addEventListener('input', () => { seeking = true; tCur.textContent = fmtTime((+seek.value / 1000) * (MP.audio?.duration || 0)); });
+  seek.addEventListener('change', () => { if (MP.audio?.duration) MP.audio.currentTime = (+seek.value / 1000) * MP.audio.duration; seeking = false; });
+  box.replaceChildren(h('div', { class: `mp mp-${mode}` },
+    h('div', { class: 'mp-info' }, title, sub),
+    h('div', { class: 'mp-ctrls' }, bShuf, bPrev, bPlay, bNext, bRep),
+    h('div', { class: 'mp-seekrow' }, tCur, seek, tDur),
+    h('div', { class: 'mp-volrow', title: 'Volumen' }, svgIcon(ICON.volume), vol)));
+  let lastPlaying = null, lastRep = null;
+  const update = () => {
+    const t = MP.track;
+    title.textContent = t ? t.name : 'No suena nada';
+    sub.textContent = t ? MP.folderName : 'Elige una carpeta para empezar';
+    const playing = !!(MP.audio && t && !MP.audio.paused);
+    if (playing !== lastPlaying) { lastPlaying = playing; bPlay.replaceChildren(svgIcon(playing ? ICON.pause : ICON.play)); bPlay.title = playing ? 'Pausa' : 'Reproducir'; bPlay.setAttribute('aria-label', bPlay.title); }
+    bShuf.classList.toggle('on', MP.shuffle);
+    if (MP.repeat !== lastRep) { lastRep = MP.repeat; bRep.replaceChildren(svgIcon(MP.repeat === 'one' ? ICON.repeatOne : ICON.repeat)); bRep.title = { all: 'Repetir la carpeta', one: 'Repetir este audio', off: 'Sin repetir' }[MP.repeat]; }
+    bRep.classList.toggle('on', MP.repeat !== 'off');
+    for (const x of [bPrev, bNext, bPlay, seek]) x.disabled = !t;
+    const d = (MP.audio && isFinite(MP.audio.duration) ? MP.audio.duration : 0) || t?.duration || 0, c = t ? MP.audio?.currentTime || 0 : 0;
+    if (!seeking) { seek.value = d ? String(Math.round((c / d) * 1000)) : '0'; tCur.textContent = fmtTime(c); }
+    tDur.textContent = fmtTime(d);
+  };
+  update();
+  MP.listeners.add(update);
+  return () => MP.listeners.delete(update);
+}
+// botones que indican que suena música, y el audio que suena en la lista
+function musIndicators() {
+  const playing = !!(MP.audio && MP.track && !MP.audio.paused);
+  $('#btnMusic')?.classList.toggle('playing', playing);
+  const rb = $('#btnReaderMusic');
+  if (rb) { rb.classList.toggle('playing', playing); rb.title = MP.track ? `Música: ${MP.track.name}${playing ? '' : ' (en pausa)'}` : 'Música'; }
+  for (const row of document.querySelectorAll('#musMain .mrow')) {
+    const cur = row.dataset.id === MP.track?.id && MP.folderId === MUS.folderId;
+    row.classList.toggle('cur', cur); row.classList.toggle('playing', cur && playing);
+  }
+}
+
+/* ---------- Apartado «Música» ---------- */
+function showMusic(push = true) {
+  closeMusicPop();
+  $('#library').hidden = true;
+  $('#music').hidden = false;
+  MUS.folderId = null;
+  document.title = 'Música · Study App';
+  if (push) history.pushState({ music: 1 }, '', '#music');
+  if (!MUS.unsub) MUS.unsub = buildPlayer($('#musPlayer'), 'bar');
+  renderMusic();
+  scrollTo(0, 0);
+}
+function closeMusic(push = true) {
+  $('#music').hidden = true;
+  $('#library').hidden = false;
+  document.title = 'Study App';
+  if (push) history.pushState({}, '', location.pathname);
+  renderLibrary();
+}
+async function renderMusic() {
+  const main = $('#musMain');
+  const [folders, all] = await Promise.all([musFolders(), db.getAll('tracks')]);
+  const folder = MUS.folderId ? folders.find((f) => f.id === MUS.folderId) : null;
+  if (MUS.folderId && !folder) MUS.folderId = null;
+  $('#musTitle').textContent = folder ? folder.name : 'Música';
+  $('#musBack').title = folder ? 'Volver a las carpetas de música' : 'Volver a la biblioteca';
+  $('#musNewFolder').hidden = !!folder;
+  $('#musAdd').hidden = !folder;
+  $('#musFolderMore').hidden = !folder;
+  if (!folder) {
+    if (!folders.length) {
+      const b = h('button', { type: 'button', class: 'btn primary' }, svgIcon(ICON.folderPlus), 'Nueva carpeta');
+      b.addEventListener('click', () => musNewFolder());
+      main.replaceChildren(h('div', { class: 'empty mus-empty' }, svgIcon(ICON.music), h('h2', {}, 'Música para estudiar'),
+        h('p', {}, 'Crea carpetas, añade tus audios MP3 o M4A y reprodúcelas mientras estudias. La música se guarda solo en este dispositivo.'), b));
+      return;
+    }
+    const grid = h('div', { class: 'mgrid' });
+    let bytes = 0;
+    for (const f of folders) {
+      const tr = await musTracksOf(f, all);
+      bytes += tr.reduce((a, t) => a + (t.size || 0), 0);
+      const total = tr.reduce((a, t) => a + (t.duration || 0), 0);
+      const play = h('button', { type: 'button', class: 'icon-btn mcard-play', title: `Reproducir «${f.name}»`, 'aria-label': `Reproducir ${f.name}` }, svgIcon(ICON.play));
+      play.addEventListener('click', (e) => { e.stopPropagation(); mpUnlock(); mpPlayFolder(f.id); });
+      if (!tr.length) play.disabled = true;
+      const more = h('button', { type: 'button', class: 'icon-btn small more', title: 'Opciones', 'aria-label': `Opciones de ${f.name}` }, svgIcon(ICON.more));
+      more.addEventListener('click', (e) => { e.stopPropagation(); musFolderMenu(more, f, tr.length); });
+      const card = h('div', { class: `mcard${MP.folderId === f.id ? ' cur' : ''}`, role: 'button', tabindex: '0', title: f.name },
+        h('span', { class: 'mcard-ico' }, svgIcon(ICON.music)),
+        h('span', { class: 'mcard-txt' }, h('b', {}, f.name), h('small', {}, `${audiosTxt(tr.length)}${total ? ` · ${fmtLen(total)}` : ''}`)),
+        play, more);
+      const open = () => { MUS.folderId = f.id; renderMusic(); scrollTo(0, 0); };
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(); });
+      grid.append(card);
+    }
+    main.replaceChildren(grid, h('p', { class: 'mus-note' }, `La música se guarda solo en este dispositivo (ahora ocupa ${(bytes / 1048576).toFixed(bytes > 1048576 * 10 ? 0 : 1)} MB). No se sincroniza ni entra en la copia de seguridad.`));
+    return;
+  }
+  // dentro de una carpeta
+  const tracks = await musTracksOf(folder, all);
+  const total = tracks.reduce((a, t) => a + (t.duration || 0), 0);
+  const playBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon(ICON.play), 'Reproducir');
+  const shufBtn = h('button', { type: 'button', class: 'btn' }, svgIcon(ICON.shuffle), 'Aleatorio');
+  playBtn.addEventListener('click', () => { mpUnlock(); mpPlayFolder(folder.id, null, false); });
+  shufBtn.addEventListener('click', () => { mpUnlock(); mpPlayFolder(folder.id, null, true); });
+  playBtn.disabled = shufBtn.disabled = !tracks.length;
+  const head = h('div', { class: 'mhead' }, playBtn, shufBtn, h('span', { class: 'mhead-info' }, `${audiosTxt(tracks.length)}${total ? ` · ${fmtLen(total)}` : ''}`));
+  if (!tracks.length) {
+    main.replaceChildren(head, h('div', { class: 'folder-empty mus-drop' }, h('p', {}, 'Esta carpeta está vacía.'), h('p', { class: 'sub' }, 'Añade audios MP3 o M4A con «Añadir audios» o arrastrándolos hasta aquí.')));
+    return;
+  }
+  const order = tracks.map((t) => t.id);
+  const move = async (i, j) => {
+    if (j < 0 || j >= order.length || i === j) return;
+    const [x] = order.splice(i, 1); order.splice(j, 0, x);
+    folder.order = [...order];
+    await db.put('mfolders', folder);
+    await mpFolderChanged(folder.id);
+    renderMusic();
+  };
+  let dragFrom = null;
+  const list = h('ol', { class: 'mlist' }, tracks.map((t, i) => {
+    const up = h('button', { type: 'button', class: 'icon-btn small', title: 'Subir', 'aria-label': `Subir ${t.name}`, disabled: i === 0 ? 'disabled' : null }, svgIcon(ICON.arrowUp));
+    const down = h('button', { type: 'button', class: 'icon-btn small', title: 'Bajar', 'aria-label': `Bajar ${t.name}`, disabled: i === tracks.length - 1 ? 'disabled' : null }, svgIcon(ICON.arrowDown));
+    const more = h('button', { type: 'button', class: 'icon-btn small', title: 'Opciones', 'aria-label': `Opciones de ${t.name}` }, svgIcon(ICON.more));
+    up.addEventListener('click', (e) => { e.stopPropagation(); move(i, i - 1); });
+    down.addEventListener('click', (e) => { e.stopPropagation(); move(i, i + 1); });
+    more.addEventListener('click', (e) => { e.stopPropagation(); musTrackMenu(more, t, folder); });
+    const li = h('li', { class: 'mrow', 'data-id': t.id, draggable: 'true', title: `Reproducir «${t.name}»` },
+      h('span', { class: 'grip' }, svgIcon(ICON.grip)),
+      h('span', { class: 'mpos' }, h('span', { class: 'mnum' }, String(i + 1)), h('span', { class: 'meq' }, h('i'), h('i'), h('i'))),
+      h('span', { class: 'mname' }, t.name),
+      h('span', { class: 'mdur' }, t.duration ? fmtTime(t.duration) : ''),
+      h('span', { class: 'mbtns' }, up, down, more));
+    li.addEventListener('click', () => {
+      if (MP.track?.id === t.id && MP.folderId === folder.id) { mpToggle(); return; }
+      mpUnlock(); mpPlayFolder(folder.id, t.id);
+    });
+    li.addEventListener('dragstart', (e) => { dragFrom = i; li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); });
+    li.addEventListener('dragend', () => { li.classList.remove('dragging'); dragFrom = null; });
+    li.addEventListener('dragover', (e) => { if (dragFrom != null) { e.preventDefault(); li.classList.add('over'); } });
+    li.addEventListener('dragleave', () => li.classList.remove('over'));
+    li.addEventListener('drop', (e) => { if (dragFrom == null) return; e.preventDefault(); e.stopPropagation(); li.classList.remove('over'); const f = dragFrom; dragFrom = null; move(f, i); });
+    return li;
+  }));
+  main.replaceChildren(head, list, h('p', { class: 'mus-note' }, 'Pulsa un audio para empezar por él. Arrastra o usa las flechas para cambiar el orden.'));
+  musIndicators();
+}
+async function musNewFolder() {
+  const name = await askText({ title: 'Nueva carpeta de música', label: 'Nombre de la carpeta', value: '', ok: 'Crear' });
+  if (!name) return;
+  const f = { id: uid(), name, order: [], createdAt: Date.now() };
+  await db.put('mfolders', f);
+  MUS.folderId = f.id;
+  renderMusic();
+}
+function musFolderMenu(anchor, f, n) {
+  showMenu(anchor, [
+    ...(n ? [{ label: 'Reproducir', icon: ICON.play, fn: () => { mpUnlock(); mpPlayFolder(f.id, null, false); } },
+      { label: 'Reproducir en orden aleatorio', icon: ICON.shuffle, fn: () => { mpUnlock(); mpPlayFolder(f.id, null, true); } }] : []),
+    { label: 'Cambiar nombre', icon: ICON.edit, fn: async () => {
+      const name = await askText({ title: 'Cambiar nombre', label: 'Nombre de la carpeta', value: f.name, ok: 'Guardar' });
+      if (!name) return;
+      f.name = name; await db.put('mfolders', f); await mpFolderChanged(f.id); renderMusic();
+    } },
+    { label: 'Eliminar carpeta', icon: ICON.trash, danger: true, fn: async () => {
+      const ok = await askChoice({ title: 'Eliminar carpeta', text: `Se eliminarán «${f.name}» y ${n ? `sus ${audiosTxt(n)}` : 'nada más (está vacía)'} de este dispositivo. No se puede deshacer.`, ok: 'Eliminar', cancel: 'Cancelar' });
+      if (!ok) return;
+      for (const t of (await db.getAll('tracks')).filter((x) => x.folderId === f.id)) { await db.del('audio', t.id); await db.del('tracks', t.id); }
+      await db.del('mfolders', f.id);
+      if (MP.folderId === f.id) mpStop();
+      if (MUS.folderId === f.id) MUS.folderId = null;
+      renderMusic();
+      toast('Carpeta eliminada');
+    } },
+  ]);
+}
+async function musTrackMenu(anchor, t, folder) {
+  const others = (await musFolders()).filter((f) => f.id !== folder.id);
+  showMenu(anchor, [
+    { label: 'Cambiar nombre', icon: ICON.edit, fn: async () => {
+      const name = await askText({ title: 'Cambiar nombre', label: 'Nombre del audio', value: t.name, ok: 'Guardar' });
+      if (!name) return;
+      t.name = name; await db.put('tracks', t);
+      if (MP.track?.id === t.id) { MP.track = t; mpEmit('track'); }
+      renderMusic();
+    } },
+    ...others.map((o) => ({ label: `Mover a «${o.name}»`, icon: ICON.move, fn: async () => {
+      t.folderId = o.id; await db.put('tracks', t);
+      folder.order = (folder.order || []).filter((x) => x !== t.id); await db.put('mfolders', folder);
+      o.order = [...(o.order || []).filter((x) => x !== t.id), t.id]; await db.put('mfolders', o);
+      await mpFolderChanged(folder.id); await mpFolderChanged(o.id);
+      renderMusic(); toast(`Movido a «${o.name}»`);
+    } })),
+    { label: 'Eliminar', icon: ICON.trash, danger: true, fn: async () => {
+      const ok = await askChoice({ title: 'Eliminar audio', text: `¿Eliminar «${t.name}» de este dispositivo?`, ok: 'Eliminar', cancel: 'Cancelar' });
+      if (!ok) return;
+      await db.del('audio', t.id); await db.del('tracks', t.id);
+      folder.order = (folder.order || []).filter((x) => x !== t.id); await db.put('mfolders', folder);
+      await mpFolderChanged(folder.id);
+      renderMusic();
+    } },
+  ]);
+}
+function audioDuration(blob) {
+  return new Promise((res) => {
+    const a = new Audio(), url = URL.createObjectURL(blob);
+    let done = false;
+    const end = (d) => { if (done) return; done = true; URL.revokeObjectURL(url); a.removeAttribute('src'); res(isFinite(d) && d > 0 ? d : 0); };
+    a.preload = 'metadata';
+    a.addEventListener('loadedmetadata', () => end(a.duration));
+    a.addEventListener('error', () => end(0));
+    setTimeout(() => end(0), 8000);
+    a.src = url;
+  });
+}
+async function musAddFiles(fileList, folderId = MUS.folderId) {
+  const files = [...fileList].filter(isAudioFile);
+  if (!files.length) { toast('Solo se admiten audios MP3 o M4A'); return; }
+  const f = await db.get('mfolders', folderId);
+  if (!f) return;
+  let added = 0;
+  for (const [i, file] of files.entries()) {
+    busy(true, `Añadiendo ${files.length > 1 ? `${i + 1}/${files.length}: ` : ''}${file.name}`);
+    try {
+      const id = uid();
+      const type = file.type || (/\.m4a$/i.test(file.name) ? 'audio/mp4' : 'audio/mpeg');
+      const blob = file.slice(0, file.size, type);
+      const duration = await audioDuration(blob);
+      await db.put('audio', { id, blob });
+      await db.put('tracks', { id, folderId, name: file.name.replace(/\.(mp3|m4a)$/i, ''), type, size: file.size, duration, addedAt: Date.now() });
+      f.order = [...(f.order || []), id];
+      added++;
+    } catch (e) { console.error(e); toast(`No se pudo añadir ${file.name}`); }
+  }
+  await db.put('mfolders', f);
+  busy(false);
+  try { await navigator.storage?.persist?.(); } catch {}
+  await mpFolderChanged(folderId);
+  renderMusic();
+  if (added) toast(`${audiosTxt(added)} añadido${added === 1 ? '' : 's'}`);
+}
+
+/* ---------- Ventanita de música en el lector ---------- */
+let musPop = null;
+function closeMusicPop() { if (!musPop) return; musPop._unsub?.(); musPop.remove(); musPop = null; }
+async function toggleMusicPop(anchor) {
+  if (musPop) { closeMusicPop(); return; }
+  const [folders, all] = await Promise.all([musFolders(), db.getAll('tracks')]);
+  const pbox = h('div');
+  const unsub = buildPlayer(pbox, 'pop');
+  const list = h('div', { class: 'mpop-folders' });
+  if (!folders.length) list.append(h('p', { class: 'mpop-empty' }, 'Aún no tienes música. Créala desde «Música», en la biblioteca.'));
+  else {
+    list.append(h('div', { class: 'mpop-h' }, 'Reproducir una carpeta'));
+    for (const f of folders) {
+      const n = all.filter((t) => t.folderId === f.id).length;
+      const b = h('button', { type: 'button', class: `mpop-folder${MP.folderId === f.id ? ' cur' : ''}`, disabled: n ? null : 'disabled' }, svgIcon(ICON.play), h('span', {}, f.name), h('small', {}, audiosTxt(n)));
+      b.addEventListener('click', () => { mpUnlock(); mpPlayFolder(f.id).then(() => { list.querySelectorAll('.mpop-folder').forEach((x) => x.classList.toggle('cur', x === b)); }); });
+      list.append(b);
+    }
+  }
+  musPop = h('div', { class: 'mpop', role: 'dialog', 'aria-label': 'Música' }, pbox, list);
+  musPop._unsub = unsub;
+  document.body.append(musPop);
+  const r = anchor.getBoundingClientRect();
+  const w = musPop.offsetWidth;
+  musPop.style.top = `${Math.round(r.bottom + 6)}px`;
+  musPop.style.left = `${Math.round(Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)))}px`;
+}
+document.addEventListener('pointerdown', (e) => { if (musPop && !e.target.closest('.mpop') && !e.target.closest('#btnReaderMusic')) closeMusicPop(); }, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMusicPop(); });
+
+function initMusic() {
+  $('#btnMusic').addEventListener('click', () => showMusic());
+  $('#musBack').addEventListener('click', () => { if (MUS.folderId) { MUS.folderId = null; renderMusic(); } else closeMusic(); });
+  $('#musNewFolder').addEventListener('click', () => musNewFolder());
+  $('#musFolderMore').addEventListener('click', async (e) => {
+    const f = await db.get('mfolders', MUS.folderId);
+    if (f) musFolderMenu(e.currentTarget, f, (await musTracksOf(f)).length);
+  });
+  $('#audioInput').addEventListener('change', (e) => { const fl = [...e.target.files]; e.target.value = ''; if (MUS.folderId && fl.length) musAddFiles(fl); });
+  $('#btnReaderMusic').addEventListener('click', (e) => toggleMusicPop(e.currentTarget));
+  window.addEventListener('popstate', () => {
+    if (location.hash === '#music') { if ($('#music').hidden && !R.doc) showMusic(false); }
+    else if (!$('#music').hidden) closeMusic(false);
+  });
+}
+
+/* =========================================================
    DOCUMENTO AUXILIAR: un PDF de consulta asociado al documento (p. ej. un formulario)
    que se ve en el editor de comentarios, pestaña «Documento auxiliar».
    Se guarda en el documento como doc.aux = id de otro documento de la biblioteca.
@@ -1665,6 +2138,7 @@ function chooseLang(anchor) {
 
 function closeReader(push = true) {
   timeStop();
+  closeMusicPop();
   resetFind();
   mmReset();
   document.body.classList.remove('has-minimap');
@@ -4394,6 +4868,7 @@ function init() {
   initAuthUI();
   initMinimap();
   initTime();
+  initMusic();
   $('#fileInput').addEventListener('change', (e) => { importFiles(e.target.files); e.target.value = ''; });
   $('#btnBack').addEventListener('click', () => closeReader());
   $('#modeText').addEventListener('click', () => setMode('text'));
@@ -4436,7 +4911,7 @@ function init() {
   window.addEventListener('dragenter', (e) => { if ($('#library').hidden) return; if ([...e.dataTransfer.types].includes('Files')) { dragDepth++; $('#dropHint').hidden = false; } });
   window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#dropHint').hidden = true; } });
   window.addEventListener('dragover', (e) => e.preventDefault());
-  window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('#dropHint').hidden = true; if (!$('#library').hidden && e.dataTransfer.files.length) importFiles(e.dataTransfer.files); });
+  window.addEventListener('drop', (e) => { e.preventDefault(); dragDepth = 0; $('#dropHint').hidden = true; if (!$('#library').hidden && e.dataTransfer.files.length) importFiles(e.dataTransfer.files); else if (!$('#music').hidden && MUS.folderId && e.dataTransfer.files.length) musAddFiles(e.dataTransfer.files); });
 
   // Ajustar tamaño al girar el móvil o redimensionar
   let lastW = window.innerWidth, rT;
@@ -4454,6 +4929,7 @@ function init() {
   renderLibrary().then(() => {
     const m = location.hash.match(/^#doc=(.+)$/);
     if (m) db.get('docs', m[1]).then((d) => d && live(d) && openDoc(d.id));
+    else if (location.hash === '#music') showMusic(false);
   });
   initAccounts();
 
