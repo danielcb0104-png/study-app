@@ -2425,6 +2425,7 @@ async function openEditor(m) {
       wheelT = setTimeout(() => { const f = Math.exp(-wheelAcc / 500); wheelAcc = 0; setEdZoom(edZoomNow() * f); }, 60);
     };
     docView.addEventListener('wheel', onWheel, { passive: false });
+    resultScroll.addEventListener('wheel', onWheel, { passive: false });
     auxView.addEventListener('wheel', onWheel, { passive: false });
     const root = h('div', { class: 'tex-editor', hidden: true },
       h('div', { class: 'te-panel', role: 'dialog', 'aria-label': 'Editor de comentario LaTeX' },
@@ -2469,7 +2470,7 @@ async function openEditor(m) {
     root.addEventListener('pointerdown', (e) => { if (e.target === root) closeEditor(); });
     const zoomPref = (k) => Math.min(3, Math.max(0.5, parseFloat(localStorage.getItem(k)) || 1));
     ED = { root, cm, paper, quote, status, title, resultLabel, docTab, auxTab, resultScroll, docView, auxView, zoomBox, zLbl,
-      docZoom: zoomPref('study-ed-zoom'), auxZoom: zoomPref('study-aux-zoom'), view: 'result',
+      docZoom: zoomPref('study-ed-zoom'), auxZoom: zoomPref('study-aux-zoom'), resZoom: zoomPref('study-res-zoom'), view: 'result',
       relabel: () => {
         fillKeys(); done.textContent = T('done'); codeLabel.textContent = T('code'); resultLabel.textContent = T('result'); docTab.textContent = T('docView'); docTab.title = T('docViewTip');
         auxTab.querySelector('.long').textContent = T('auxView'); auxTab.querySelector('.short').textContent = T('auxShort'); auxTab.title = T('auxViewTip');
@@ -2505,8 +2506,9 @@ function setEdView(v, remember = true) {
     tab.classList.toggle('on', k === v); tab.setAttribute('aria-selected', String(k === v));
   }
   ED.resultScroll.hidden = v !== 'result'; ED.docView.hidden = v !== 'doc'; ED.auxView.hidden = v !== 'aux';
-  ED.zoomBox.hidden = v === 'result';
+  ED.zoomBox.hidden = false;
   if (remember) { try { localStorage.setItem('study-ed-view', v); } catch {} }
+  if (v === 'result') { ED.zLbl.textContent = `${Math.round(ED.resZoom * 100)} %`; applyResZoom(); }
   if (v === 'doc') {
     ED.zLbl.textContent = `${Math.round(ED.docZoom * 100)} %`;
     if (ED.m && ED.docFor !== ED.m.id) buildEdDocView(ED.m);
@@ -2517,7 +2519,9 @@ function setEdView(v, remember = true) {
     else if (!ED.auxReady) ED.zoomBox.hidden = true;
   }
 }
-const edZoomNow = () => (ED.view === 'aux' ? ED.auxZoom : ED.docZoom) || 1;
+const edZoomNow = () => (ED.view === 'aux' ? ED.auxZoom : ED.view === 'result' ? ED.resZoom : ED.docZoom) || 1;
+// Zoom de «Resultado»: letra y fórmulas más grandes; el texto se recoloca al ancho del panel
+function applyResZoom() { ED.paper.style.fontSize = `${Math.round(15 * (ED.resZoom || 1) * 10) / 10}px`; }
 function edZoomStep(dir) {
   const t = Math.round(edZoomNow() * 100);
   setEdZoom((dir > 0 ? (Math.floor(t / 10) + 1) * 10 : (Math.ceil(t / 10) - 1) * 10) / 100);
@@ -2530,9 +2534,19 @@ function viewCenter(box) {
   return pg ? { n: +pg.dataset.n, frac: (cy - pg.offsetTop) / pg.offsetHeight, fx: box.scrollWidth > box.clientWidth ? (box.scrollLeft + box.clientWidth / 2) / box.scrollWidth : 0.5 } : null;
 }
 function setEdZoom(z) {
-  if (!ED?.m || ED.view === 'result') return;
+  if (!ED?.m) return;
   z = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
   if (z === edZoomNow()) return;
+  if (ED.view === 'result') {
+    // mantener a la vista lo mismo que había en el centro
+    const box = ED.resultScroll, frac = (box.scrollTop + box.clientHeight / 2) / Math.max(1, box.scrollHeight);
+    ED.resZoom = z;
+    try { localStorage.setItem('study-res-zoom', String(z)); } catch {}
+    applyResZoom();
+    ED.zLbl.textContent = `${Math.round(z * 100)} %`;
+    box.scrollTop = Math.max(0, frac * box.scrollHeight - box.clientHeight / 2);
+    return;
+  }
   if (ED.view === 'aux') {
     if (!ED.auxReady) return;
     const anchor = viewCenter(ED.auxView);
