@@ -4680,6 +4680,8 @@ async function applyRemoteToUI(changed) {
 async function wipeLocal() {
   for (const s of ['docs', 'files', 'marks', 'folders', 'outbox']) await db.clear(s);
   LIB.folderId = null; localStorage.removeItem('study-folder');
+  // también la marca de «última sincronización»: si no, al volver a entrar no se descargaría nada
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith('study-sync-last-')) localStorage.removeItem(k); } catch {}
 }
 async function localCount() { return (await db.count('docs')) + (await db.count('folders')); }
 // Al entrar: decidir qué hacer con lo que ya había en este dispositivo
@@ -4775,6 +4777,9 @@ async function doAfterSignIn() {
   hideAuth();
   if (first) {
     await adoptLocalData();
+    // sin nada en este dispositivo: descargarlo todo desde el principio
+    // (por si los datos locales se borraron pero quedó la marca de la última sincronización)
+    if (!(await localCount())) localStorage.removeItem(lastKey());
     await renderLibrary();
     updateAccountUI();
     runSync();
